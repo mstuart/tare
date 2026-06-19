@@ -58,9 +58,11 @@ pub fn stability_order(segments: &[Segment]) -> Vec<SegmentId> {
     idx.into_iter().map(|i| segments[i].id).collect()
 }
 
-/// Enforce plan invariants per entry (spec §9): I3 frozen=Keep; I4 Replace must preserve protected
-/// tokens; I1 Replace must strictly reduce tokens. Any violation reverts that entry to Keep.
+/// Enforce plan invariants (spec §9): I3 frozen=Keep; I4/I5 a Replace must losslessly reconstruct
+/// the original; I1 a Replace must strictly reduce tokens. Any violation reverts that entry to Keep.
 fn enforce_invariants(actions: &mut [SegmentAction], segments: &[Segment]) {
+    let by_id: std::collections::HashMap<SegmentId, &Segment> =
+        segments.iter().map(|s| (s.id, s)).collect();
     for (a, s) in actions.iter_mut().zip(segments.iter()) {
         if s.mutation_class == MutationClass::Frozen && *a != SegmentAction::Keep {
             *a = SegmentAction::Keep;
@@ -68,8 +70,8 @@ fn enforce_invariants(actions: &mut [SegmentAction], segments: &[Segment]) {
         }
         if let SegmentAction::Replace { token_count, .. } = a {
             let reduces = *token_count < s.token_count;
-            let preserves = crate::plan::replace_preserves_protected(s, a);
-            if !reduces || !preserves { *a = SegmentAction::Keep; }
+            let lossless = crate::plan::replace_is_lossless(s, a, &by_id);
+            if !reduces || !lossless { *a = SegmentAction::Keep; }
         }
     }
 }
@@ -80,7 +82,7 @@ mod tests {
     use crate::segment::*;
     use crate::plan::{SegmentAction, DropReason};
     use crate::session::SessionState;
-    use crate::protected::{ProtectedKind, ProtectedSpan};
+    use crate::plan::Reconstruct;
 
     fn seg(id: u64, class: MutationClass) -> Segment {
         Segment {
@@ -127,27 +129,39 @@ mod tests {
         assert_eq!(order, vec![SegmentId(1), SegmentId(3), SegmentId(2), SegmentId(0)]);
     }
 
+    // Replace that increases tokens (violates I1) — uses a real valid delta so only I1 fails.
     struct BloatPass;
     impl Pass for BloatPass {
         fn name(&self) -> &'static str { "bloat" }
         fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
-            ctx.segments.iter().map(|s| PlanEntry { id: s.id,
-                action: SegmentAction::Replace { bytes: vec![b'x'; 1000], token_count: s.token_count + 50, reason: DropReason::Duplicate } }).collect()
+            ctx.segments.iter().map(|s| {
+                let patch = diffy::create_patch(
+                    std::str::from_utf8(&s.bytes).unwrap_or(""),
+                    "anything",
+                ).to_string();
+                PlanEntry { id: s.id, action: SegmentAction::Replace {
+                    rendered: patch.into_bytes(), token_count: s.token_count + 50,
+                    reconstruct: Reconstruct::Delta { base: s.id }, reason: DropReason::Duplicate } }
+            }).collect()
         }
     }
+
+    // Replace whose delta does NOT reconstruct the original (violates I4/I5).
+    struct LossyPass;
+    impl Pass for LossyPass {
+        fn name(&self) -> &'static str { "lossy" }
+        fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
+            ctx.segments.iter().map(|s| PlanEntry { id: s.id, action: SegmentAction::Replace {
+                rendered: b"not a valid patch".to_vec(), token_count: 1,
+                reconstruct: Reconstruct::Delta { base: SegmentId(999) }, reason: DropReason::Duplicate } }).collect()
+        }
+    }
+
     struct DropFrozenPass;
     impl Pass for DropFrozenPass {
         fn name(&self) -> &'static str { "drop-frozen" }
         fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
             ctx.segments.iter().map(|s| PlanEntry { id: s.id, action: SegmentAction::Drop(DropReason::Evicted) }).collect()
-        }
-    }
-    struct StripProtectedPass;
-    impl Pass for StripProtectedPass {
-        fn name(&self) -> &'static str { "strip-protected" }
-        fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
-            ctx.segments.iter().map(|s| PlanEntry { id: s.id,
-                action: SegmentAction::Replace { bytes: b"redacted".to_vec(), token_count: 1, reason: DropReason::Duplicate } }).collect()
         }
     }
 
@@ -158,19 +172,43 @@ mod tests {
         assert_eq!(plan.entries[0].action, SegmentAction::Keep);
         assert_eq!(crate::plan::net_tokens(&plan, &segs), 10);
     }
+
+    #[test]
+    fn lossy_replace_is_reverted_to_keep() {
+        let segs = vec![seg(0, MutationClass::Fast)];
+        let plan = Planner::new(vec![Box::new(LossyPass)]).plan(&segs, &SessionState::default());
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep);
+    }
+
+    #[test]
+    fn valid_delta_replace_is_kept() {
+        // Two segments: base (id 0) and target (id 1). The Replace on target uses a diff that,
+        // when applied to base.bytes, reconstructs target.bytes exactly. Tokens reduce. Survives.
+        let mut base = seg(0, MutationClass::Fast);
+        base.bytes = b"alpha\nbeta\ngamma\n".to_vec();
+        let mut target = seg(1, MutationClass::Fast);
+        target.bytes = b"alpha\nBETA\ngamma\n".to_vec();
+        let patch = diffy::create_patch("alpha\nbeta\ngamma\n", "alpha\nBETA\ngamma\n").to_string();
+        struct ValidDelta { patch: String }
+        impl Pass for ValidDelta {
+            fn name(&self) -> &'static str { "valid-delta" }
+            fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
+                let target = &ctx.segments[1];
+                let base = &ctx.segments[0];
+                vec![PlanEntry { id: target.id, action: SegmentAction::Replace {
+                    rendered: self.patch.clone().into_bytes(), token_count: 1,
+                    reconstruct: crate::plan::Reconstruct::Delta { base: base.id }, reason: DropReason::Duplicate } }]
+            }
+        }
+        let plan = Planner::new(vec![Box::new(ValidDelta { patch })]).plan(&[base.clone(), target.clone()], &SessionState::default());
+        assert!(matches!(plan.entries[1].action, SegmentAction::Replace { .. }), "valid lossless reducing delta is kept");
+    }
+
     #[test]
     fn i3_reverts_drop_of_frozen_segment_to_keep() {
         let segs = vec![seg(0, MutationClass::Frozen), seg(1, MutationClass::Fast)];
         let plan = Planner::new(vec![Box::new(DropFrozenPass)]).plan(&segs, &SessionState::default());
         assert_eq!(plan.entries[0].action, SegmentAction::Keep);
         assert_eq!(plan.entries[1].action, SegmentAction::Drop(DropReason::Evicted));
-    }
-    #[test]
-    fn i4_reverts_replace_that_strips_protected_token_to_keep() {
-        let mut s = seg(0, MutationClass::Fast);
-        s.bytes = b"path src/a.rs here".to_vec();
-        s.protected_spans = vec![ProtectedSpan { span: Span { start: 5, end: 12 }, kind: ProtectedKind::Path }];
-        let plan = Planner::new(vec![Box::new(StripProtectedPass)]).plan(&[s.clone()], &SessionState::default());
-        assert_eq!(plan.entries[0].action, SegmentAction::Keep);
     }
 }
