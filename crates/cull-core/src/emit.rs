@@ -49,8 +49,8 @@ pub fn emit(segments: &[Segment], plan: &CompressionPlan) -> (Vec<EmittedSegment
                 dropped += 1;
                 drops.push((id, reason.clone()));
             }
-            Some(SegmentAction::Replace { bytes, token_count, .. }) => {
-                emitted.push(EmittedSegment { id, bytes: bytes.clone(), token_count: *token_count });
+            Some(SegmentAction::Replace { rendered, token_count, .. }) => {
+                emitted.push(EmittedSegment { id, bytes: rendered.clone(), token_count: *token_count });
                 replaced += 1;
                 net += *token_count;
             }
@@ -91,7 +91,9 @@ mod tests {
         let plan = CompressionPlan { entries: vec![
             PlanEntry { id: SegmentId(0), action: SegmentAction::Drop(DropReason::Superseded) },
             PlanEntry { id: SegmentId(1), action: SegmentAction::Keep },
-            PlanEntry { id: SegmentId(2), action: SegmentAction::Replace { bytes: b"cc".to_vec(), token_count: 3, reason: DropReason::Duplicate } },
+            PlanEntry { id: SegmentId(2), action: SegmentAction::Replace {
+                rendered: b"cc".to_vec(), token_count: 3,
+                reconstruct: crate::plan::Reconstruct::Delta { base: SegmentId(1) }, reason: DropReason::Duplicate } },
         ]};
         let (emitted, report) = emit(&segs, &plan);
 
@@ -121,5 +123,27 @@ mod tests {
         assert_eq!(emitted[0].bytes, b"X");
         assert_eq!(report.net_tokens, 10);
         assert_eq!(report.kept, 1);
+    }
+
+    #[test]
+    fn emits_delta_rendered_and_it_round_trips_to_original() {
+        use crate::plan::{apply_unified_diff, Reconstruct};
+        let base_text = "fn a() {}\nfn b() {}\nfn c() {}\n";
+        let new_text  = "fn a() {}\nfn b2() {}\nfn c() {}\n";
+        let base = seg(0, 0, MutationClass::Fast, 20, base_text);
+        let target = seg(1, 1, MutationClass::Fast, 20, new_text);
+        let patch = diffy::create_patch(base_text, new_text).to_string();
+
+        let plan = CompressionPlan { entries: vec![
+            PlanEntry { id: SegmentId(0), action: SegmentAction::Keep },
+            PlanEntry { id: SegmentId(1), action: SegmentAction::Replace {
+                rendered: patch.clone().into_bytes(), token_count: 5,
+                reconstruct: Reconstruct::Delta { base: SegmentId(0) }, reason: DropReason::Duplicate } },
+        ]};
+        let (emitted, _report) = emit(&[base.clone(), target.clone()], &plan);
+        // the emitted Replace bytes are the diff; applying it to base recovers the exact original
+        let emitted_delta = &emitted.iter().find(|e| e.id == SegmentId(1)).unwrap().bytes;
+        let recovered = apply_unified_diff(base.bytes.as_slice(), emitted_delta).unwrap();
+        assert_eq!(recovered, target.bytes);
     }
 }
