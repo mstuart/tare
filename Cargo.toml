@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cull-core",
+    "crates/cull-tokenize",
+    "crates/cull-cache",
+    "crates/cull-proxy",
+    "crates/cull-bench",
+    "crates/cull-cli",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/<owner>/cull"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+regex = "1"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+tiktoken-rs = "0.6"

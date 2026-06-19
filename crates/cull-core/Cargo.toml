@@ -1,0 +1,9 @@
+[package]
+name = "cull-core"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+regex = { workspace = true }
+xxhash-rust = { workspace = true }
