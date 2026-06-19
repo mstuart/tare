@@ -15,6 +15,12 @@ pub fn structural_passes() -> Vec<Box<dyn Pass>> {
     vec![Box::new(SupersessionPass), Box::new(ExactDedupPass)]
 }
 
+/// The default query-conditioned pass pipeline. Currently the deterministic RelevancePass;
+/// PRF and embedding-salience passes are added here in a later plan.
+pub fn query_passes() -> Vec<Box<dyn Pass>> {
+    vec![Box::new(RelevancePass::default())]
+}
+
 #[cfg(test)]
 mod tests {
     use crate::segment::*;
@@ -53,5 +59,43 @@ mod tests {
     fn structural_passes_returns_both_passes() {
         let passes = super::structural_passes();
         assert_eq!(passes.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod query_tests {
+    use crate::segment::*;
+    use crate::plan::{SegmentAction, net_tokens, input_tokens};
+    use crate::planner::Planner;
+    use crate::session::SessionState;
+    use crate::task::TaskSignal;
+
+    fn seg(id: u64, pos: usize, text: &str) -> Segment {
+        Segment {
+            id: SegmentId(id), kind: SegmentKind::FileRead, role: Role::Tool,
+            bytes: text.as_bytes().to_vec(), token_count: 10, position: pos,
+            mutation_class: MutationClass::Fast, origin: Origin::default(),
+            protected_spans: vec![], refs: RefLedger::default(),
+        }
+    }
+
+    #[test]
+    fn query_pipeline_drops_irrelevant_and_never_increases() {
+        let task = TaskSignal::from_text("authentication jwt");
+        let segs = vec![
+            seg(0, 0, "jwt authentication handler"),  // relevant, old — kept (overlap)
+            seg(1, 1, "kubernetes deployment yaml"),  // irrelevant, old — dropped
+            seg(2, 20, "grafana dashboard metrics"),  // irrelevant, recent — kept (recency)
+        ];
+        let before = input_tokens(&segs);
+        let plan = Planner::new(super::query_passes()).plan_with_task(&segs, &SessionState::default(), &task);
+        let after = net_tokens(&plan, &segs);
+        assert!(after < before);
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep);
+    }
+
+    #[test]
+    fn query_passes_returns_relevance_pass() {
+        assert_eq!(super::query_passes().len(), 1);
     }
 }
