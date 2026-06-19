@@ -1,6 +1,6 @@
 use std::io::Read;
 use clap::{Parser, Subcommand};
-use cull_cli::run_compress;
+use cull_cli::run_compress_with_budget;
 
 #[derive(Parser)]
 #[command(name = "cull", about = "Query-aware, cache-correct, lossless context compression")]
@@ -19,19 +19,22 @@ enum Command {
         /// Emit the fidelity report as JSON to stderr.
         #[arg(long, default_value_t = false)]
         report: bool,
+        /// Optional hard token budget; evict lowest-priority context to fit.
+        #[arg(long)]
+        budget: Option<u32>,
     },
 }
 
 fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Command::Compress { task, report } => {
+        Command::Compress { task, report, budget } => {
             let mut input = String::new();
             if std::io::stdin().read_to_string(&mut input).is_err() {
                 eprintln!("error: failed to read stdin");
                 std::process::exit(1);
             }
-            match run_compress(&input, &task) {
+            match run_compress_with_budget(&input, &task, budget) {
                 Ok(out) => {
                     println!("{}", out.compressed);
                     let r = &out.report;
