@@ -9,3 +9,5 @@ pub use segmenter::{segment, RawBlock};
 pub use session::SessionState;
 pub mod plan;
 pub use plan::{CompressionPlan, DropReason, PlanEntry, SegmentAction};
+pub mod planner;
+pub use planner::{Pass, PlanCtx, Planner, stability_order};
