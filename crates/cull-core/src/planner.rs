@@ -1,4 +1,4 @@
-use crate::plan::{CompressionPlan, PlanEntry, SegmentAction};
+use crate::plan::{CompressionPlan, DropReason, PlanEntry, SegmentAction};
 use crate::segment::{MutationClass, Segment, SegmentId};
 use crate::session::SessionState;
 
@@ -26,13 +26,18 @@ impl Planner {
         self.plan_with_task(segments, session, &crate::task::TaskSignal::empty())
     }
 
-    /// Plan conditioned on the current task. The body is the previous `plan` body, with
-    /// `PlanCtx { segments, session, task }`.
-    pub fn plan_with_task(
+    /// Plan conditioned on the current task (no eviction).
+    pub fn plan_with_task(&self, segments: &[Segment], session: &SessionState, task: &crate::task::TaskSignal) -> CompressionPlan {
+        self.plan_with_budget(segments, session, task, None)
+    }
+
+    /// Plan, then (if a budget is set) evict lowest-priority non-frozen survivors until net <= budget.
+    pub fn plan_with_budget(
         &self,
         segments: &[Segment],
         session: &SessionState,
         task: &crate::task::TaskSignal,
+        budget: Option<u32>,
     ) -> CompressionPlan {
         let mut actions: Vec<SegmentAction> = vec![SegmentAction::Keep; segments.len()];
         let index: std::collections::HashMap<SegmentId, usize> =
@@ -44,9 +49,49 @@ impl Planner {
             }
         }
         enforce_invariants(&mut actions, segments);
+        if let Some(b) = budget { evict_to_budget(&mut actions, segments, task, b); }
         CompressionPlan {
             entries: segments.iter().zip(actions).map(|(s, a)| PlanEntry { id: s.id, action: a }).collect(),
         }
+    }
+}
+
+/// Tokens a single action currently emits.
+fn action_tokens(action: &SegmentAction, seg: &Segment) -> u32 {
+    match action {
+        SegmentAction::Keep => seg.token_count,
+        SegmentAction::Drop(_) => 0,
+        SegmentAction::Replace { token_count, .. } => *token_count,
+    }
+}
+
+/// Higher = keep. Task-relevant segments dominate; among equals, more recent (higher position) wins.
+fn eviction_priority(seg: &Segment, task: &crate::task::TaskSignal) -> u64 {
+    let relevant = if task.is_empty() {
+        false
+    } else {
+        let syms = crate::task::extract_symbols(&String::from_utf8_lossy(&seg.bytes));
+        !syms.is_disjoint(&task.symbols)
+    };
+    (relevant as u64) * 1_000_000_000 + seg.position as u64
+}
+
+/// Drop lowest-priority non-frozen survivors until net <= budget (spec §7 C, §8 Rule 4).
+fn evict_to_budget(actions: &mut [SegmentAction], segments: &[Segment], task: &crate::task::TaskSignal, budget: u32) {
+    let mut net: u32 = actions.iter().zip(segments).map(|(a, s)| action_tokens(a, s)).sum();
+    if net <= budget { return; }
+    // candidate indices: non-frozen, currently surviving (Keep or Replace)
+    let mut cands: Vec<usize> = (0..segments.len())
+        .filter(|&i| segments[i].mutation_class != MutationClass::Frozen
+            && !matches!(actions[i], SegmentAction::Drop(_)))
+        .collect();
+    // ascending priority => lowest priority (old + irrelevant) evicted first
+    cands.sort_by_key(|&i| eviction_priority(&segments[i], task));
+    for i in cands {
+        if net <= budget { break; }
+        let saved = action_tokens(&actions[i], &segments[i]);
+        actions[i] = SegmentAction::Drop(DropReason::Evicted);
+        net -= saved;
     }
 }
 
@@ -83,6 +128,42 @@ mod tests {
     use crate::plan::{SegmentAction, DropReason};
     use crate::session::SessionState;
     use crate::plan::Reconstruct;
+    use crate::task::TaskSignal;
+
+    fn kb(id: u64, pos: usize, class: MutationClass, tok: u32, text: &str) -> Segment {
+        Segment {
+            id: SegmentId(id), kind: SegmentKind::FileRead, role: Role::Tool,
+            bytes: text.as_bytes().to_vec(), token_count: tok, position: pos,
+            mutation_class: class, origin: Origin::default(),
+            protected_spans: vec![], refs: RefLedger::default(),
+        }
+    }
+
+    #[test]
+    fn no_budget_means_no_eviction() {
+        let segs = vec![kb(0, 0, MutationClass::Fast, 100, "anything")];
+        let plan = Planner::new(vec![]).plan_with_budget(&segs, &SessionState::default(), &TaskSignal::empty(), None);
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep);
+    }
+
+    #[test]
+    fn evicts_lowest_priority_until_under_budget_keeping_frozen_and_relevant() {
+        let task = TaskSignal::from_text("authentication jwt");
+        let segs = vec![
+            kb(0, 0, MutationClass::Frozen, 100, "system prompt"),          // frozen: never evicted
+            kb(1, 1, MutationClass::Fast,   100, "jwt authentication code"), // relevant: keep
+            kb(2, 2, MutationClass::Fast,   100, "old irrelevant logs aaa"), // irrelevant, oldest fast
+            kb(3, 3, MutationClass::Fast,   100, "more irrelevant bbb"),     // irrelevant, newer fast
+        ];
+        // total 400; budget 250 -> must drop ~150 worth. Evict irrelevant, oldest-first.
+        let plan = Planner::new(vec![]).plan_with_budget(&segs, &SessionState::default(), &task, Some(250));
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep, "frozen never evicted");
+        assert_eq!(plan.entries[1].action, SegmentAction::Keep, "task-relevant kept");
+        assert_eq!(plan.entries[2].action, SegmentAction::Drop(DropReason::Evicted), "oldest irrelevant evicted first");
+        // net now 300? still > 250 -> next lowest priority (entry 3) also evicted
+        assert_eq!(plan.entries[3].action, SegmentAction::Drop(DropReason::Evicted));
+        assert!(crate::plan::net_tokens(&plan, &segs) <= 250);
+    }
 
     fn seg(id: u64, class: MutationClass) -> Segment {
         Segment {
