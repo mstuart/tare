@@ -13,3 +13,4 @@ pub mod planner;
 pub use planner::{Pass, PlanCtx, Planner, stability_order};
 pub mod passes;
 pub use passes::SupersessionPass;
+pub use passes::ExactDedupPass;
