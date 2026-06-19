@@ -3,8 +3,20 @@ name = "cull-proxy"
 version = "0.0.0"
 edition.workspace = true
 
+[[bin]]
+name = "cull-proxy"
+path = "src/main.rs"
+
 [dependencies]
 cull-core = { path = "../cull-core" }
 cull-tokenize = { path = "../cull-tokenize" }
 serde = { workspace = true }
 serde_json = "1"
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+bytes = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

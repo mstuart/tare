@@ -1,3 +1,5 @@
+pub mod server;
+
 use serde_json::Value;
 use cull_core::segmenter::{segment, RawBlock};
 use cull_core::segment::{Role, SegmentKind};
