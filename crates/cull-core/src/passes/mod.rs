@@ -1,10 +1,12 @@
 pub mod supersession;
 pub mod dedup;
 pub mod relevance;
+pub mod ivm;
 
 pub use supersession::SupersessionPass;
 pub use dedup::ExactDedupPass;
 pub use relevance::RelevancePass;
+pub use ivm::IvmDeltaPass;
 
 use crate::planner::Pass;
 
