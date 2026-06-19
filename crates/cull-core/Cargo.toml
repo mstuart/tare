@@ -1,0 +1,13 @@
+[package]
+name = "cull-core"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+regex = { workspace = true }
+xxhash-rust = { workspace = true }
+cull-tokenize = { path = "../cull-tokenize" }
+
+[dev-dependencies]
+serde_json = "1"
