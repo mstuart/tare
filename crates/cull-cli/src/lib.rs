@@ -1,6 +1,39 @@
 use serde::Deserialize;
 use cull_core::segment::{Role, SegmentKind};
-use cull_core::segmenter::RawBlock;
+use cull_core::segmenter::{segment, RawBlock};
+use cull_core::planner::Planner;
+use cull_core::passes::{structural_passes, query_passes};
+use cull_core::session::SessionState;
+use cull_core::task::TaskSignal;
+use cull_core::emit::{emit, FidelityReport};
+use cull_tokenize::ApproxCounter;
+
+pub struct CompressOutput {
+    pub compressed: String,
+    pub report: FidelityReport,
+}
+
+/// Run the full pipeline on a JSON context + task: segment, plan (structural + query passes),
+/// emit, and join the surviving segments into the compressed context string.
+pub fn run_compress(blocks_json: &str, task: &str) -> Result<CompressOutput, String> {
+    let blocks = parse_blocks(blocks_json)?;
+    let counter = ApproxCounter::o200k();
+    let segs = segment(&blocks, &counter);
+
+    let mut passes = structural_passes();
+    passes.extend(query_passes());
+    let task_sig = TaskSignal::from_text(task);
+
+    let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &task_sig);
+    let (emitted, report) = emit(&segs, &plan);
+
+    let compressed = emitted.iter()
+        .map(|e| String::from_utf8_lossy(&e.bytes).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+
+    Ok(CompressOutput { compressed, report })
+}
 
 #[derive(Debug, Deserialize)]
 pub struct InputBlock {
@@ -54,6 +87,21 @@ pub fn parse_blocks(json: &str) -> Result<Vec<RawBlock>, String> {
 mod tests {
     use super::*;
     use cull_core::segment::{Role, SegmentKind};
+
+    #[test]
+    fn run_compress_drops_superseded_and_reports() {
+        let json = r#"[
+            {"role":"tool","kind":"tool_output","class":"cargo-test","text":"old run failed"},
+            {"role":"tool","kind":"tool_output","class":"cargo-test","text":"new run passed all"}
+        ]"#;
+        let out = run_compress(json, "run the tests").unwrap();
+        // old cargo-test superseded => fewer net tokens than input, at least one drop
+        assert!(out.report.net_tokens < out.report.input_tokens);
+        assert!(out.report.dropped >= 1);
+        // the surviving (new) output text is present
+        assert!(out.compressed.contains("new run passed all"));
+        assert!(!out.compressed.contains("old run failed"));
+    }
 
     #[test]
     fn parses_roles_and_kinds_including_tool_output_class() {
