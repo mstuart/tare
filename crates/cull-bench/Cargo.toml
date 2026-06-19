@@ -1,0 +1,4 @@
+[package]
+name = "cull-bench"
+version = "0.0.0"
+edition.workspace = true
