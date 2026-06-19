@@ -2,3 +2,15 @@
 name = "cull-bench"
 version = "0.0.0"
 edition.workspace = true
+
+[[bin]]
+name = "cull-bench"
+path = "src/main.rs"
+
+[lib]
+name = "cull_bench"
+path = "src/lib.rs"
+
+[dependencies]
+cull-core = { path = "../cull-core" }
+cull-tokenize = { path = "../cull-tokenize" }
