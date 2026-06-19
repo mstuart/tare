@@ -15,7 +15,9 @@ fn patterns() -> &'static Patterns {
     static P: OnceLock<Patterns> = OnceLock::new();
     P.get_or_init(|| Patterns {
         path: Regex::new(r"(?:[\w.-]+/)+[\w.-]+\.\w+|/[\w./-]+").unwrap(),
-        line_no: Regex::new(r":(\d+)(?::\d+)?\b").unwrap(),
+        // line numbers like ":128" or ":128:4"; the leading colon is intentionally
+        // included in the span (superset protection — never narrows what is protected).
+        line_no: Regex::new(r":\d+(?::\d+)?\b").unwrap(),
         error_code: Regex::new(r"\b[EC]\d{3,5}\b").unwrap(),
         number: Regex::new(r"\b\d+\b").unwrap(),
         null_empty: Regex::new(r#"\bnull\b|""|''"#).unwrap(),

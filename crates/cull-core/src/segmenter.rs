@@ -25,6 +25,8 @@ pub fn segment(blocks: &[RawBlock], counter: &dyn TokenCounter) -> Vec<Segment> 
             position: i,
             mutation_class: MutationClass::for_kind(&b.kind),
             protected_spans: detect_protected_spans(&b.text),
+            // `turn: i` is the block index — an approximation. RawBlock carries no
+            // conversation turn yet; the proxy will supply real turns in a later plan.
             origin: Origin { turn: i, ..Origin::default() },
             bytes: b.text.clone().into_bytes(),
             refs: RefLedger::default(),
