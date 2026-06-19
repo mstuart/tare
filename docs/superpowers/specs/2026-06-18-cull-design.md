@@ -1,7 +1,7 @@
-# Winnow — Query-Aware, Cache-Correct, Lossless Context Compression for Coding Agents
+# Cull — Query-Aware, Cache-Correct, Lossless Context Compression for Coding Agents
 
 - **Status:** Design — approved to spec 2026-06-18
-- **Working name:** `winnow` (placeholder; rename is a one-line change)
+- **Name:** `cull`
 - **Language:** Rust
 - **Scope:** Complete system, end to end. Not a v1/MVP/POC. Every technique surfaced in research is in scope; the "Build Order" section sequences the work but nothing is deferred out of the product.
 
@@ -9,14 +9,14 @@
 
 ## 1. Summary
 
-Winnow is a context-compression **engine + proxy** for LLM coding agents (Claude Code, Cursor, Cline, Codex, and any Anthropic-/OpenAI-compatible client). It reduces the token cost of long agent sessions by compressing the accumulating conversation/tool-result **tail** — at the compaction boundary, conditioned on the agent's **current task**, while **preserving the prompt cache** and **never mutating a kept token**.
+Cull is a context-compression **engine + proxy** for LLM coding agents (Claude Code, Cursor, Cline, Codex, and any Anthropic-/OpenAI-compatible client). It reduces the token cost of long agent sessions by compressing the accumulating conversation/tool-result **tail** — at the compaction boundary, conditioned on the agent's **current task**, while **preserving the prompt cache** and **never mutating a kept token**.
 
 The thesis, which is also the entire difference from every incumbent:
 
 > **Whole-unit, lossless, query-aware, cache-correct.**
-> Winnow *drops* whole irrelevant / superseded / duplicate units and *losslessly delta-encodes* re-reads. Anything it keeps is byte-exact. It scores what to keep against the current task (incumbents are query-blind). It only ever touches the uncached tail and accounts for prompt-cache economics (incumbents silently bust the cache and can go net-negative). It guarantees it never increases net token cost.
+> Cull *drops* whole irrelevant / superseded / duplicate units and *losslessly delta-encodes* re-reads. Anything it keeps is byte-exact. It scores what to keep against the current task (incumbents are query-blind). It only ever touches the uncached tail and accounts for prompt-cache economics (incumbents silently bust the cache and can go net-negative). It guarantees it never increases net token cost.
 
-This is a deliberate **anti-LLMLingua** position. Token-level lossy pruning is precisely what breaks coding agents — it destroys file paths, line numbers, identifiers, exact literals, and null-vs-empty distinctions. Winnow performs **no token-level lossy compression**. It operates on whole semantic units and lossless deltas only.
+This is a deliberate **anti-LLMLingua** position. Token-level lossy pruning is precisely what breaks coding agents — it destroys file paths, line numbers, identifiers, exact literals, and null-vs-empty distinctions. Cull performs **no token-level lossy compression**. It operates on whole semantic units and lossless deltas only.
 
 ---
 
@@ -33,11 +33,11 @@ The token/context-compression space for coding agents is **saturated** (60+ ship
 Corroborating facts (each to be re-confirmed against primary sources before any number is published — see §15):
 
 - Tool **output** dominates agent context (~84% of SWE-agent turn tokens). Simple observation masking halves cost and matches LLM summarization on solve rate. *(arXiv 2508.21433 "The Complexity Trap".)*
-- On commercial APIs, heavy compression is often **net-slower** (<0.5× speedup); the latency "win" is an unoptimized-serving artifact. *(arXiv 2604.02985 "Prompt Compression in the Wild".)* → Winnow claims **token/context** savings, never latency.
+- On commercial APIs, heavy compression is often **net-slower** (<0.5× speedup); the latency "win" is an unoptimized-serving artifact. *(arXiv 2604.02985 "Prompt Compression in the Wild".)* → Cull claims **token/context** savings, never latency.
 - "Can Compressed LLMs Truly Act?" (arXiv 2505.19433, ACBench) concerns **weight** compression (quantization/pruning), not prompt compression — it shows 1–3% tool-use degradation but 10–15% on end-to-end tasks. Prompt-level compression avoids weight-level degradation entirely; this paper is **not** evidence that prompt compression breaks tool-calling.
 - Compression can **increase** tokens: a documented Hermes case went 64,186 → 71,173 (+7k). No incumbent guards against it.
 
-**The opening:** a single tool that is query-aware **and** cache-correct **and** lossless-on-exact-values **and** fires at the compaction boundary **and** measures itself honestly does not exist. Winnow is the coherent union of those blind spots plus the lossless/cache discipline. That union — not any single pass — is the novelty.
+**The opening:** a single tool that is query-aware **and** cache-correct **and** lossless-on-exact-values **and** fires at the compaction boundary **and** measures itself honestly does not exist. Cull is the coherent union of those blind spots plus the lossless/cache discipline. That union — not any single pass — is the novelty.
 
 ---
 
@@ -62,7 +62,7 @@ Corroborating facts (each to be re-confirmed against primary sources before any 
 ## 4. Success Criteria
 
 1. **Correctness invariants hold, provably** (property-tested): net-non-negative, kept-token byte-exactness, cached-prefix immutability, exact-token-class preservation.
-2. **Honest benchmark** shows Winnow beats LLMLingua-2, Headroom, Tamp, naive truncation, and native `/compact` on **net cache-adjusted tokens at equal-or-better downstream task fidelity**, broken out by task type, on real agent traces.
+2. **Honest benchmark** shows Cull beats LLMLingua-2, Headroom, Tamp, naive truncation, and native `/compact` on **net cache-adjusted tokens at equal-or-better downstream task fidelity**, broken out by task type, on real agent traces.
 3. **Tool-call fidelity** (parameter extraction, schema adherence) is preserved within measurement noise — measured explicitly, because nobody else measures it.
 4. The **self-report** emitted on real workloads is accurate (ratio, net tokens, cache impact, what was dropped) and falsifiable.
 5. The proxy is **transparent**: identical agent behavior with compression off; streaming and tool-calls preserved bit-for-bit.
@@ -72,15 +72,15 @@ Corroborating facts (each to be re-confirmed against primary sources before any 
 ## 5. System Architecture
 
 ```
-                          ┌──────────────────────── winnow ────────────────────────┐
+                          ┌──────────────────────── cull ────────────────────────┐
 client (Claude Code,      │                                                          │
-Cursor, Cline, Codex) ───▶│  PROXY  (winnow-proxy)                                   │
+Cursor, Cline, Codex) ───▶│  PROXY  (cull-proxy)                                   │
    ANTHROPIC_BASE_URL     │   • intercept request, detect provider + cache state     │
    / OPENAI_BASE_URL      │   • boundary detection (when to compress)                │
                           │   • streaming + tool-call + auth passthrough             │
                           │                    │                                     │
                           │                    ▼                                     │
-                          │  ENGINE  (winnow-core)         task signal ──┐           │
+                          │  ENGINE  (cull-core)         task signal ──┐           │
                           │   ┌──────────┐ ┌────────┐ ┌─────────┐ ┌──────────┐       │
                           │   │ segmenter │▶│ scorer │▶│ planner │▶│ emitter   │      │
                           │   └──────────┘ └────────┘ └─────────┘ └──────────┘       │
@@ -89,7 +89,7 @@ Cursor, Cline, Codex) ───▶│  PROXY  (winnow-proxy)                    
                           │    counted      relevance   pass orch.   fidelity report  │
                           │    segments     + structural + invariants                 │
                           │                                                          │
-                          │  SESSION STATE (winnow-core::session)                    │
+                          │  SESSION STATE (cull-core::session)                    │
                           │   • canonical file store (IVM)  • tool-class registry    │
                           │   • span reference/recency/phase ledger                  │
                           │   • cache-prefix commitment (frozen-zone hash)           │
@@ -97,7 +97,7 @@ Cursor, Cline, Codex) ───▶│  PROXY  (winnow-proxy)                    
                           └──────────────────────────────────────────────────────────┘
                                        │                         ▲
                                        ▼                         │
-                              upstream provider           BENCH (winnow-bench)
+                              upstream provider           BENCH (cull-bench)
                               (Anthropic / OpenAI)         engine + baselines over
                                                            real traces → leaderboard
 ```
@@ -108,12 +108,12 @@ The engine is **pure** (no I/O) and reusable; the proxy and bench wrap it. The C
 
 | Crate | Responsibility |
 |---|---|
-| `winnow-core` | Engine: segmenter, scorer, planner, emitter, all passes, session state. No I/O. |
-| `winnow-tokenize` | Token counting: `tiktoken-rs` approximation + Anthropic `count_tokens` API client; provider-aware. |
-| `winnow-cache` | Provider cache models + economic model (Anthropic 5m/1h, OpenAI), parameterized by `W` (write mult), `R` (read mult), min-prefix, TTL. |
-| `winnow-proxy` | Streaming reverse proxy (Anthropic + OpenAI compatible); boundary detection; passthrough fidelity. |
-| `winnow-bench` | Benchmark harness; runs engine + baselines (shells out to Python/Node tools) over corpora; emits leaderboard. |
-| `winnow-cli` | Offline compression / inspection / single-trace runs / fidelity report rendering. |
+| `cull-core` | Engine: segmenter, scorer, planner, emitter, all passes, session state. No I/O. |
+| `cull-tokenize` | Token counting: `tiktoken-rs` approximation + Anthropic `count_tokens` API client; provider-aware. |
+| `cull-cache` | Provider cache models + economic model (Anthropic 5m/1h, OpenAI), parameterized by `W` (write mult), `R` (read mult), min-prefix, TTL. |
+| `cull-proxy` | Streaming reverse proxy (Anthropic + OpenAI compatible); boundary detection; passthrough fidelity. |
+| `cull-bench` | Benchmark harness; runs engine + baselines (shells out to Python/Node tools) over corpora; emits leaderboard. |
+| `cull-cli` | Offline compression / inspection / single-trace runs / fidelity report rendering. |
 
 Key external crates: `tree-sitter` + language grammars (segmenter, slicer), `fastembed`/`ort` (embedding scorer, in-process ONNX), a Myers-diff crate (IVM/delta), `fastcdc` (content-defined chunking), `xxhash-rust` (content addressing), a BM25 implementation (PRF). No Python in the engine; Python/Node appear only as benchmark **baselines** the harness shells out to.
 
@@ -198,7 +198,7 @@ Passes are grouped by character. The **planner** (§8) decides which fire, in wh
 
 ## 8. Cache-Aware Planner & Economic Model
 
-The planner is what makes Winnow *correct* where the field is silently broken. It is parameterized by the provider cache model and enforces the invariants.
+The planner is what makes Cull *correct* where the field is silently broken. It is parameterized by the provider cache model and enforces the invariants.
 
 ### Economic model (provider-parameterized)
 Variables: base price `B`; write multiplier `W`; read multiplier `R`; prefix tokens `T`; hit rate `h`; turns of reuse `N`; compression ratio `c` (compressed/original).
@@ -249,7 +249,7 @@ Enforced in code and verified by property tests (§13):
 
 The only mechanism that can actually compress a prompt against a hosted model (hooks prepend; they cannot replace). Delivered as a streaming reverse proxy.
 
-- **Interception:** clients point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at Winnow. Requests are parsed, compressed at the boundary, forwarded; responses streamed back untouched.
+- **Interception:** clients point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` at Cull. Requests are parsed, compressed at the boundary, forwarded; responses streamed back untouched.
 - **Providers:** Anthropic (Messages API, `cache_control` breakpoints) and OpenAI-compatible (automatic prefix caching). Provider detection sets the economic parameters.
 - **Fidelity (non-negotiable):** streaming SSE, tool-call blocks, `cache_control` markers, and auth headers pass through **bit-exact**. With compression disabled the proxy is a transparent passthrough (a measured invariant, not an aspiration).
 - **State:** per-session (keyed by a stable session id derived from the stable prefix) — canonical file store, registries, ledgers, cache-prefix commitment.
@@ -270,10 +270,10 @@ The emitter assembles the compressed request and emits a fidelity report **on th
 
 ## 12. The Benchmark (Honest Measurement)
 
-"Better" is proven, not claimed. `winnow-bench` is a first-class deliverable.
+"Better" is proven, not claimed. `cull-bench` is a first-class deliverable.
 
 - **Corpus:** real multi-turn coding-agent traces (recorded Claude Code / agent sessions), SWE-bench-style tasks, and the public datasets used by the cited papers. Each item: full context + task + ground-truth correct continuation/tool-call.
-- **Contestants:** Winnow, LLMLingua-2, Headroom, Tamp, naive truncation, native `/compact`. Each invoked uniformly via a CLI seam (the harness shells out to the Python/Node baselines — we do **not** reimplement them).
+- **Contestants:** Cull, LLMLingua-2, Headroom, Tamp, naive truncation, native `/compact`. Each invoked uniformly via a CLI seam (the harness shells out to the Python/Node baselines — we do **not** reimplement them).
 - **Metrics:** compression ratio; **net cache-adjusted tokens**; **downstream task fidelity** (does the agent produce the correct next action with the compressed context?); **tool-call fidelity** (parameter extraction, schema adherence — measured explicitly, since nobody else does); **false-negative / divergence rate** (cases compression makes *wrong*, not just preserved cases); **cache-hit-rate impact**; broken out by **task type** with code-gen and exact-value lookup called out (the fragile tasks).
 - **Output:** a reproducible leaderboard — the citable recognition artifact.
 
@@ -291,17 +291,17 @@ The emitter assembles the compressed request and emits a fidelity report **on th
 
 ## 14. Build Order (complete system — sequencing only, nothing descoped)
 
-1. `winnow-core` types, segmenter, `winnow-tokenize`, session-state skeleton.
-2. `winnow-cache` economic model + planner skeleton + invariants I1–I4.
+1. `cull-core` types, segmenter, `cull-tokenize`, session-state skeleton.
+2. `cull-cache` economic model + planner skeleton + invariants I1–I4.
 3. Structural lossless passes A1 (supersession), A2 (IVM/delta), A3 (RePair) — highest leverage, deterministic.
 4. Query-conditioned passes B1 (slice) → B2 (PRF) → B3 (embedding fallback).
 5. Eviction policies C1 (Belady-oracle), C2 (ARC phase-decay), C3 (tail-only).
 6. A4 (CDC within-session, then cross-session store); B4 (reasoning-trace pruning).
 7. Emitter + fidelity report (§11).
-8. `winnow-proxy` — Anthropic first, then OpenAI; transparency + streaming + tool-call fidelity.
+8. `cull-proxy` — Anthropic first, then OpenAI; transparency + streaming + tool-call fidelity.
 9. D1 predicate pushdown (opt-in, at the tool-call boundary).
-10. `winnow-bench` — corpus, baselines, metrics, leaderboard.
-11. `winnow-cli`.
+10. `cull-bench` — corpus, baselines, metrics, leaderboard.
+11. `cull-cli`.
 
 ---
 
@@ -309,7 +309,7 @@ The emitter assembles the compressed request and emits a fidelity report **on th
 
 ### Risks
 - **Crowded field.** 60+ tools; even a strictly better tool faces an adoption/recognition fight. Differentiation rests on the lossless + cache-correct + query-aware + honest-measurement *combination*, not any single pass.
-- **Not first to each idea.** Pieces exist scattered (tokdiet shadow-eval + cache preservation; Squeez/SWE-Pruner query-awareness via fine-tuned models; mcp-compressor schema compression). Winnow's claim is the coherent union + correctness discipline, which must be stated honestly.
+- **Not first to each idea.** Pieces exist scattered (tokdiet shadow-eval + cache preservation; Squeez/SWE-Pruner query-awareness via fine-tuned models; mcp-compressor schema compression). Cull's claim is the coherent union + correctness discipline, which must be stated honestly.
 - **Slicer precision** (B1) on dynamically-typed / cross-file symbol resolution is the hardest engineering risk; B3 embedding fallback mitigates false drops.
 - **Proxy fidelity is existential.** Any corruption of streaming or tool-call semantics is fatal to adoption; hence the transparency invariant + integration tests.
 
