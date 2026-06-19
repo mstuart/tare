@@ -16,6 +16,10 @@ pub struct CompressOutput {
 /// Run the full pipeline on a JSON context + task: segment, plan (structural + query passes),
 /// emit, and join the surviving segments into the compressed context string.
 pub fn run_compress(blocks_json: &str, task: &str) -> Result<CompressOutput, String> {
+    run_compress_with_budget(blocks_json, task, None)
+}
+
+pub fn run_compress_with_budget(blocks_json: &str, task: &str, budget: Option<u32>) -> Result<CompressOutput, String> {
     let blocks = parse_blocks(blocks_json)?;
     let counter = ApproxCounter::o200k();
     let segs = segment(&blocks, &counter);
@@ -24,7 +28,7 @@ pub fn run_compress(blocks_json: &str, task: &str) -> Result<CompressOutput, Str
     passes.extend(query_passes());
     let task_sig = TaskSignal::from_text(task);
 
-    let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &task_sig);
+    let plan = Planner::new(passes).plan_with_budget(&segs, &SessionState::default(), &task_sig, budget);
     let (emitted, report) = emit(&segs, &plan);
 
     let compressed = emitted.iter()
@@ -90,6 +94,21 @@ pub fn parse_blocks(json: &str) -> Result<Vec<RawBlock>, String> {
 mod tests {
     use super::*;
     use cull_core::segment::{Role, SegmentKind};
+
+    #[test]
+    fn run_compress_with_budget_evicts_to_fit() {
+        // three ~unrelated file reads; a tiny budget forces eviction beyond the structural passes
+        let json = r#"[
+            {"role":"tool","kind":"file_read","path":"a.rs","text":"alpha alpha alpha alpha alpha"},
+            {"role":"tool","kind":"file_read","path":"b.rs","text":"beta beta beta beta beta beta"},
+            {"role":"tool","kind":"file_read","path":"c.rs","text":"gamma gamma gamma gamma gamma"}
+        ]"#;
+        let unbudgeted = run_compress_with_budget(json, "alpha", None).unwrap();
+        let budgeted = run_compress_with_budget(json, "alpha", Some(8)).unwrap();
+        assert!(budgeted.report.net_tokens <= 8 || budgeted.report.net_tokens < unbudgeted.report.net_tokens,
+            "budget forces additional eviction");
+        assert!(budgeted.report.dropped >= unbudgeted.report.dropped);
+    }
 
     #[test]
     fn run_compress_drops_superseded_and_reports() {
