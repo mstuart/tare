@@ -2,10 +2,11 @@ use crate::plan::{CompressionPlan, PlanEntry, SegmentAction};
 use crate::segment::{MutationClass, Segment, SegmentId};
 use crate::session::SessionState;
 
-/// Read-only context a pass sees. Later plans add the task signal, cache model, and budget.
+/// Read-only context a pass sees. Later plans add the cache model and budget.
 pub struct PlanCtx<'a> {
     pub segments: &'a [Segment],
     pub session: &'a SessionState,
+    pub task: &'a crate::task::TaskSignal,
 }
 
 /// A pass proposes actions for some segments. Unmentioned segments stay Keep. Passes run in
@@ -20,11 +21,23 @@ pub struct Planner { passes: Vec<Box<dyn Pass>> }
 impl Planner {
     pub fn new(passes: Vec<Box<dyn Pass>>) -> Self { Self { passes } }
 
+    /// Plan with no task signal (query-conditioned passes are inert).
     pub fn plan(&self, segments: &[Segment], session: &SessionState) -> CompressionPlan {
+        self.plan_with_task(segments, session, &crate::task::TaskSignal::empty())
+    }
+
+    /// Plan conditioned on the current task. The body is the previous `plan` body, with
+    /// `PlanCtx { segments, session, task }`.
+    pub fn plan_with_task(
+        &self,
+        segments: &[Segment],
+        session: &SessionState,
+        task: &crate::task::TaskSignal,
+    ) -> CompressionPlan {
         let mut actions: Vec<SegmentAction> = vec![SegmentAction::Keep; segments.len()];
         let index: std::collections::HashMap<SegmentId, usize> =
             segments.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
-        let ctx = PlanCtx { segments, session };
+        let ctx = PlanCtx { segments, session, task };
         for pass in &self.passes {
             for entry in pass.propose(&ctx) {
                 if let Some(&i) = index.get(&entry.id) { actions[i] = entry.action; }
