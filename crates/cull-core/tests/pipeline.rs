@@ -9,7 +9,7 @@ use cull_core::emit::emit;
 use cull_tokenize::ApproxCounter;
 
 fn raw(role: Role, kind: SegmentKind, text: &str) -> RawBlock {
-    RawBlock { role, kind, text: text.to_string() }
+    RawBlock { role, kind, text: text.to_string(), path: None }
 }
 
 #[test]

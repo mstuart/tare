@@ -40,7 +40,9 @@ pub struct InputBlock {
     pub role: String,
     pub kind: String,
     #[serde(default)]
-    pub class: Option<String>, // for tool_output
+    pub class: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
     pub text: String,
 }
 
@@ -79,6 +81,7 @@ pub fn parse_blocks(json: &str) -> Result<Vec<RawBlock>, String> {
             role: parse_role(&b.role)?,
             kind: parse_kind(&b.kind, &b.class)?,
             text: b.text,
+            path: b.path,
         })
     }).collect()
 }
