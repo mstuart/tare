@@ -9,6 +9,7 @@ pub struct RawBlock {
     pub role: Role,
     pub kind: SegmentKind,
     pub text: String,
+    pub path: Option<String>, // file path for FileRead/Diff, used by the IVM pass
 }
 
 /// Turn raw blocks into fully-populated segments: sequential ids/positions,
@@ -27,7 +28,7 @@ pub fn segment(blocks: &[RawBlock], counter: &dyn TokenCounter) -> Vec<Segment> 
             protected_spans: detect_protected_spans(&b.text),
             // `turn: i` is the block index — an approximation. RawBlock carries no
             // conversation turn yet; the proxy will supply real turns in a later plan.
-            origin: Origin { turn: i, ..Origin::default() },
+            origin: Origin { turn: i, path: b.path.clone(), ..Origin::default() },
             bytes: b.text.clone().into_bytes(),
             refs: RefLedger::default(),
         })
@@ -41,7 +42,7 @@ mod tests {
     use cull_tokenize::ApproxCounter;
 
     fn raw(role: Role, kind: SegmentKind, text: &str) -> RawBlock {
-        RawBlock { role, kind, text: text.to_string() }
+        RawBlock { role, kind, text: text.to_string(), path: None }
     }
 
     #[test]
@@ -68,5 +69,16 @@ mod tests {
     fn empty_input_yields_no_segments() {
         let counter = ApproxCounter::o200k();
         assert!(segment(&[], &counter).is_empty());
+    }
+
+    #[test]
+    fn segment_carries_path_into_origin() {
+        let counter = ApproxCounter::o200k();
+        let blocks = vec![RawBlock {
+            role: Role::Tool, kind: SegmentKind::FileRead,
+            text: "fn main(){}".into(), path: Some("src/main.rs".into()),
+        }];
+        let segs = segment(&blocks, &counter);
+        assert_eq!(segs[0].origin.path.as_deref(), Some("src/main.rs"));
     }
 }

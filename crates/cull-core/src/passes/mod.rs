@@ -1,18 +1,19 @@
 pub mod supersession;
 pub mod dedup;
 pub mod relevance;
+pub mod ivm;
 
 pub use supersession::SupersessionPass;
 pub use dedup::ExactDedupPass;
 pub use relevance::RelevancePass;
+pub use ivm::IvmDeltaPass;
 
 use crate::planner::Pass;
 
-/// The default Drop-based structural pass pipeline, in run order. Supersession first (drops
-/// obsolete tool outputs), then exact dedup (drops identical leftovers). Replace-based passes
-/// (delta/IVM, RePair) are added in a later plan alongside the emitter.
+/// The default structural pass pipeline, in run order: supersession (drops obsolete tool outputs),
+/// IVM/delta (changed re-reads become unified diffs), then exact dedup (drops identical leftovers).
 pub fn structural_passes() -> Vec<Box<dyn Pass>> {
-    vec![Box::new(SupersessionPass), Box::new(ExactDedupPass)]
+    vec![Box::new(SupersessionPass), Box::new(IvmDeltaPass::new()), Box::new(ExactDedupPass)]
 }
 
 /// The default query-conditioned pass pipeline. Currently the deterministic RelevancePass;
@@ -58,7 +59,34 @@ mod tests {
     #[test]
     fn structural_passes_returns_both_passes() {
         let passes = super::structural_passes();
-        assert_eq!(passes.len(), 2);
+        assert_eq!(passes.len(), 3);
+    }
+
+    #[test]
+    fn structural_pipeline_deltas_changed_reread() {
+        use crate::session::SessionState;
+        use crate::planner::Planner;
+        use crate::plan::{SegmentAction, net_tokens, input_tokens};
+
+        fn fseg(id: u64, pos: usize, path: &str, text: &str) -> Segment {
+            Segment {
+                id: SegmentId(id), kind: SegmentKind::FileRead, role: Role::Tool,
+                bytes: text.as_bytes().to_vec(), token_count: 100, position: pos,
+                mutation_class: MutationClass::Fast,
+                origin: Origin { turn: pos, path: Some(path.into()), ..Origin::default() },
+                protected_spans: vec![], refs: RefLedger::default(),
+            }
+        }
+        let base = fseg(0, 0, "src/x.rs", "line a\nline b\nline c\nline d\nline e\nline f\n");
+        let reread = fseg(1, 1, "src/x.rs", "line a\nline b\nline CHANGED\nline d\nline e\nline f\n");
+        let plan = Planner::new(super::structural_passes()).plan(&[base.clone(), reread.clone()], &SessionState::default());
+        assert!(matches!(plan.entries[1].action, SegmentAction::Replace { .. }));
+        assert!(net_tokens(&plan, &[base.clone(), reread.clone()]) < input_tokens(&[base, reread]));
+    }
+
+    #[test]
+    fn structural_passes_has_three_passes() {
+        assert_eq!(super::structural_passes().len(), 3);
     }
 }
 
