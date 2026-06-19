@@ -17,3 +17,5 @@ pub mod passes;
 pub use passes::SupersessionPass;
 pub use passes::ExactDedupPass;
 pub use passes::RelevancePass;
+pub mod emit;
+pub use emit::{emit, EmittedSegment, FidelityReport};
