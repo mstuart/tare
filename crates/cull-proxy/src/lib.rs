@@ -74,10 +74,18 @@ pub fn compress_anthropic_request(req: &Value, opts: &CompressOpts) -> Value {
     let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &task);
 
     // apply: stub the content of any dropped tool_result, in place
+    debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool_result");
     for (entry, (mi, bi)) in plan.entries.iter().zip(locs.iter()) {
         if let SegmentAction::Drop(reason) = &entry.action {
-            out["messages"][*mi]["content"][*bi]["content"] =
-                Value::String(format!("[cull: tool output elided — {reason:?}]"));
+            if let Some(content) = out
+                .get_mut("messages").and_then(serde_json::Value::as_array_mut)
+                .and_then(|msgs| msgs.get_mut(*mi))
+                .and_then(|m| m.get_mut("content")).and_then(serde_json::Value::as_array_mut)
+                .and_then(|blocks| blocks.get_mut(*bi))
+                .and_then(|b| b.get_mut("content"))
+            {
+                *content = serde_json::Value::String(format!("[cull: tool output elided — {reason:?}]"));
+            }
         }
     }
     out
