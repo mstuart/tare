@@ -229,6 +229,67 @@ impl Compressor for Cull {
     }
 }
 
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+/// Shell-out compressor seam (spec §12): runs an external compressor (LLMLingua-2, Tamp, …) as a
+/// subprocess behind the `Compressor` trait. The joined context goes to stdin; the task and budget
+/// go via env (`CULL_TASK`/`CULL_BUDGET`) so stdin stays clean; the compressed context is read from
+/// stdout. Any spawn error or non-zero exit ⇒ passthrough (the harness never fails because a
+/// baseline is missing). We do NOT reimplement the baselines — adapters are thin scripts.
+pub struct ShellCompressor {
+    name: &'static str,
+    program: String,
+    args: Vec<String>,
+}
+
+impl ShellCompressor {
+    pub fn new(name: &'static str, program: impl Into<String>, args: Vec<String>) -> Self {
+        Self { name, program: program.into(), args }
+    }
+
+    fn run(&self, task: &str, budget: u32, input: &str) -> Result<String, String> {
+        let mut child = Command::new(&self.program)
+            .args(&self.args)
+            .env("CULL_TASK", task)
+            .env("CULL_BUDGET", budget.to_string())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn {}: {e}", self.program))?;
+        {
+            let mut si = child.stdin.take().ok_or("no stdin handle")?;
+            si.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
+        } // stdin dropped here -> EOF
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!("{} exit {:?}: {}", self.program, out.status.code(),
+                String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    /// Is this baseline runnable here? Runs a trivial input; Ok iff exit 0 with non-empty output.
+    pub fn probe(&self) -> Result<(), String> {
+        match self.run("probe", 1, "probe input text\n") {
+            Ok(s) if !s.trim().is_empty() => Ok(()),
+            Ok(_) => Err("produced empty output".to_string()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl Compressor for ShellCompressor {
+    fn name(&self) -> &'static str { self.name }
+    fn compress(&self, blocks: &[RawBlock], task: &str, budget: u32) -> CompressResult {
+        let input = blocks.iter().map(|b| b.text.clone()).collect::<Vec<_>>().join("\n");
+        let text = self.run(task, budget, &input).unwrap_or(input); // failure -> passthrough
+        let net = ApproxCounter::o200k().count(&text) as u32;
+        CompressResult { text, net_tokens: net }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BoardRow {
     pub name: &'static str,
@@ -345,5 +406,30 @@ mod tests {
         let full = NoCompression.compress(&item.blocks, item.task, budget);
         assert!(c.net_tokens < full.net_tokens);
         assert!(t.net_tokens <= full.net_tokens);
+    }
+
+    #[test]
+    fn shell_compressor_transforms_via_stdin_stdout() {
+        // `tr a-z A-Z` uppercases stdin -> proves the pipe works; env task/budget are ignored by tr
+        let c = ShellCompressor::new("upper", "tr", vec!["a-z".into(), "A-Z".into()]);
+        let blocks = vec![tool("grep", "hello world")];
+        let r = c.compress(&blocks, "task", 60);
+        assert!(r.text.contains("HELLO WORLD"), "stdin->stdout transform: {}", r.text);
+        assert!(r.net_tokens > 0);
+    }
+
+    #[test]
+    fn shell_compressor_missing_program_passes_through() {
+        let c = ShellCompressor::new("nope", "cull-no-such-binary-xyz", vec![]);
+        let blocks = vec![tool("grep", "alpha beta gamma")];
+        let r = c.compress(&blocks, "task", 60);
+        assert!(r.text.contains("alpha beta gamma"), "missing program -> passthrough");
+        assert!(c.probe().is_err(), "probe reports the missing program");
+    }
+
+    #[test]
+    fn shell_compressor_probe_ok_for_cat() {
+        let c = ShellCompressor::new("cat-pass", "cat", vec![]);
+        assert!(c.probe().is_ok(), "cat is available and echoes input");
     }
 }
