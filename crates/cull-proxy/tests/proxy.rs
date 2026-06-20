@@ -31,6 +31,7 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
         client: reqwest::Client::new(),
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
+        monitors: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
 
@@ -77,6 +78,7 @@ async fn openai_proxy_compresses_then_forwards_and_returns_upstream_response() {
         client: reqwest::Client::new(),
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 },
+        monitors: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -125,6 +127,7 @@ async fn proxy_response_carries_cull_report_headers() {
         client: reqwest::Client::new(),
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
+        monitors: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -150,4 +153,57 @@ async fn proxy_response_carries_cull_report_headers() {
     assert!(received.contains("[cull"), "upstream body was compressed: {received}");
     assert!(resp.headers().get("x-cull-net-tokens").is_some(),
         "response carries x-cull-net-tokens header; got headers: {:?}", resp.headers());
+}
+
+#[tokio::test]
+async fn halts_compression_after_three_low_hit_rate_turns() {
+    use std::sync::{Arc, Mutex};
+    use axum::{routing::post, Router, extract::State, body::Bytes};
+    use cull_proxy::{server::{app, ProxyState}, CompressOpts};
+
+    // mock upstream: records every received body, returns a LOW cache hit-rate usage (h ~= 0.001)
+    type Rec = Arc<Mutex<Vec<String>>>;
+    async fn up(State(rec): State<Rec>, body: Bytes) -> &'static str {
+        rec.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+        "{\"ok\":true,\"usage\":{\"cache_read_input_tokens\":1,\"cache_creation_input_tokens\":1000}}"
+    }
+    let rec: Rec = Arc::new(Mutex::new(Vec::new()));
+    let upstream = Router::new().route("/v1/messages", post(up)).with_state(rec.clone());
+    let up_port = spawn(upstream).await;
+
+    let state = Arc::new(ProxyState {
+        client: reqwest::Client::new(),
+        upstream: format!("http://127.0.0.1:{up_port}"),
+        opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
+        monitors: Default::default(),
+    });
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let req = serde_json::json!({
+        "model":"claude-x","max_tokens":100,
+        "messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"kafka partitions offsets totally unrelated junk"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"jwt authentication middleware verify"}]},
+            {"role":"user","content":"fix the authentication jwt bug"}
+        ]
+    });
+    let client = reqwest::Client::new();
+    let mut last_halted = false;
+    for _ in 0..4 {
+        let resp = client.post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+            .header("x-api-key","sk-test").json(&req).send().await.unwrap();
+        last_halted = resp.headers().get("x-cull-halted").is_some();
+        let _ = resp.text().await.unwrap(); // drain so the tee's monitor update completes
+    }
+    let bodies = rec.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 4);
+    // turn 1: compression active -> irrelevant kafka tool_result stubbed away
+    assert!(!bodies[0].contains("kafka partitions offsets totally unrelated"),
+        "turn 1 should be compressed: {}", bodies[0]);
+    // turn 4: monitor halted after 3 sub-floor turns -> byte-exact passthrough (kafka intact)
+    assert!(bodies[3].contains("kafka partitions offsets totally unrelated"),
+        "turn 4 should be uncompressed passthrough: {}", bodies[3]);
+    assert!(last_halted, "turn 4 response carries x-cull-halted");
 }
