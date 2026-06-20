@@ -22,6 +22,8 @@ pub use passes::IvmDeltaPass;
 pub use passes::EnvelopeDedupPass;
 pub use passes::ReasoningTracePass;
 pub mod embed;
+pub mod json_crush;
+pub mod schema_slim;
 pub mod predicate;
 pub use predicate::narrow_tool_call;
 pub mod code;
