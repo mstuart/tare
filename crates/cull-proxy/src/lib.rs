@@ -5,8 +5,9 @@ use serde_json::Value;
 use cull_core::segmenter::{segment, RawBlock};
 use cull_core::segment::{Role, SegmentKind};
 use cull_core::planner::Planner;
-use cull_core::passes::{structural_passes, query_passes};
-use cull_core::emit::{emit, FidelityReport};
+use cull_core::passes::{structural_passes, query_passes, RelevancePass, ReasoningTracePass};
+use cull_core::emit::emit;
+pub use cull_core::emit::FidelityReport;
 use cull_core::session::SessionState;
 use cull_core::task::TaskSignal;
 use cull_core::plan::SegmentAction;
@@ -148,6 +149,93 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
                     .and_then(|arr| arr.get_mut(*k)).and_then(|tb| tb.get_mut("text"))
                 { *t = Value::String(text); }
             }
+        }
+    }
+    (out, Some(report))
+}
+
+/// Compress an OpenAI Chat Completions request: run the full pass set over `role:"tool"` message
+/// `content` strings, keyed by tool name + optional file path extracted from the matching
+/// assistant `tool_calls[].function.{name,arguments}` via `tool_call_id`. Delegates to the
+/// reported variant and discards the report. Preserves all structure (roles, order, `tool_calls`,
+/// `system`, `tools`, model). Only `role:"tool"` content strings change.
+pub fn compress_openai_request(req: &Value, opts: &CompressOpts) -> Value {
+    compress_openai_request_reported(req, opts).0
+}
+
+/// Core variant returning `(compressed_request, Option<FidelityReport>)`. The report is `None`
+/// when compression is disabled or the request has no `role:"tool"` string content.
+pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts) -> (Value, Option<FidelityReport>) {
+    if !opts.enabled { return (req.clone(), None); }
+    let mut out = req.clone();
+
+    // pass 1: build tool_call_id -> (name, optional_path) from all assistant tool_calls
+    let mut meta: HashMap<String, (String, Option<String>)> = HashMap::new();
+    if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
+        for m in msgs {
+            let Some(calls) = m.get("tool_calls").and_then(Value::as_array) else { continue; };
+            for c in calls {
+                let Some(id) = c.get("id").and_then(Value::as_str) else { continue; };
+                let f = c.get("function");
+                let name = f.and_then(|f| f.get("name")).and_then(Value::as_str).unwrap_or("tool").to_string();
+                let path = f.and_then(|f| f.get("arguments")).and_then(Value::as_str)
+                    .and_then(|a| serde_json::from_str::<Value>(a).ok())
+                    .and_then(|args| args.get("path").or_else(|| args.get("file")).or_else(|| args.get("file_path"))
+                        .and_then(Value::as_str).map(String::from));
+                meta.insert(id.to_string(), (name, path));
+            }
+        }
+    }
+
+    // pass 2: collect role:"tool" message contents with rich kind + path, and their locations
+    let mut raws: Vec<RawBlock> = Vec::new();
+    let mut locs: Vec<usize> = Vec::new();
+    let mut task = String::new();
+    if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
+        for (mi, m) in msgs.iter().enumerate() {
+            match m.get("role").and_then(Value::as_str) {
+                Some("tool") => {
+                    if let Some(text) = m.get("content").and_then(Value::as_str) {
+                        let (class, path) = m.get("tool_call_id").and_then(Value::as_str)
+                            .and_then(|id| meta.get(id)).cloned()
+                            .unwrap_or_else(|| ("tool".to_string(), None));
+                        let kind = if path.is_some() { SegmentKind::FileRead }
+                                   else { SegmentKind::ToolOutput { class } };
+                        raws.push(RawBlock { role: Role::Tool, kind, text: text.to_string(), path });
+                        locs.push(mi);
+                    }
+                }
+                Some("user") => { if let Some(t) = m.get("content").and_then(Value::as_str) { task = t.to_string(); } }
+                _ => {}
+            }
+        }
+    }
+    if raws.is_empty() { return (out, None); }
+
+    let counter = ApproxCounter::o200k();
+    let segs = segment(&raws, &counter);
+    let mut passes = structural_passes(); // supersession + IVM + dedup
+    passes.push(Box::new(RelevancePass { recency_keep: opts.recency_keep })); // relevance
+    passes.push(Box::new(ReasoningTracePass::default()));
+    let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &TaskSignal::from_text(&task));
+    let (_e, report) = emit(&segs, &plan);
+
+    let savings = report.input_tokens.saturating_sub(report.net_tokens);
+    if savings < opts.min_savings { return (req.clone(), None); }
+
+    // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
+    debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool message");
+    for (entry, mi) in plan.entries.iter().zip(locs.iter()) {
+        let replacement = match &entry.action {
+            SegmentAction::Drop(reason) => Some(format!("[cull: tool output elided — {reason:?}]")),
+            SegmentAction::Replace { rendered, .. } =>
+                Some(format!("[cull: delta vs an earlier read]\n{}", String::from_utf8_lossy(rendered))),
+            SegmentAction::Keep => None,
+        };
+        if let Some(text) = replacement {
+            if let Some(c) = out.get_mut("messages").and_then(Value::as_array_mut)
+                .and_then(|ms| ms.get_mut(*mi)).and_then(|m| m.get_mut("content"))
+            { *c = Value::String(text); }
         }
     }
     (out, Some(report))
@@ -320,6 +408,38 @@ mod tests {
         let kept   = out["messages"][2]["content"][0]["content"][0]["text"].as_str().unwrap();
         assert!(elided.contains("[cull"), "irrelevant array-content text elided: {elided}");
         assert!(kept.contains("jwt authentication middleware"), "relevant kept: {kept}");
+    }
+
+    #[test]
+    fn openai_compresses_tool_message_keeps_structure() {
+        let req = serde_json::json!({
+            "model":"gpt-x",
+            "messages":[
+                {"role":"assistant","content":null,"tool_calls":[
+                    {"id":"c1","type":"function","function":{"name":"grep","arguments":"{}"}}]},
+                {"role":"tool","tool_call_id":"c1","content":"kubernetes helm registry unrelated junk alpha"},
+                {"role":"assistant","content":null,"tool_calls":[
+                    {"id":"c2","type":"function","function":{"name":"read","arguments":"{\"path\":\"jwt.rs\"}"}}]},
+                {"role":"tool","tool_call_id":"c2","content":"jwt authentication middleware verify"},
+                {"role":"user","content":"fix authentication jwt"}
+            ]
+        });
+        let out = compress_openai_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        // structure: same message count, roles, tool_calls untouched
+        assert_eq!(out["messages"].as_array().unwrap().len(), 5);
+        assert_eq!(out["messages"][0]["tool_calls"], req["messages"][0]["tool_calls"]);
+        assert_eq!(out["model"], req["model"]);
+        // irrelevant tool message elided; relevant kept
+        assert!(out["messages"][1]["content"].as_str().unwrap().contains("[cull"));
+        assert!(out["messages"][3]["content"].as_str().unwrap().contains("jwt authentication middleware"));
+        // tool_call_id preserved
+        assert_eq!(out["messages"][1]["tool_call_id"], "c1");
+    }
+
+    #[test]
+    fn openai_disabled_is_passthrough() {
+        let req = serde_json::json!({"model":"x","messages":[{"role":"user","content":"hi"}]});
+        assert_eq!(compress_openai_request(&req, &CompressOpts { enabled: false, recency_keep: 4, min_savings: 0 }), req);
     }
 
     #[test]
