@@ -48,7 +48,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 ## §6 Session state & tokenization
 - [x] ✅ Session-state threaded + consumed — `SupersessionPass` reads the persisted `ToolClassRegistry`; `SessionEngine` (internal mode) accumulates `tools`/`files`/`prefix` across turns and plans against them — `engine.rs`, `passes/supersession.rs`. (IVM delta still bases off in-request segments; cross-store deltas would need a stored-base `Reconstruct` variant — bounded follow-up. Hosted-model proxy stays stateless by design.)
 - [x] ✅ ApproxCounter token counting
-- [ ] ❌ Anthropic `count_tokens` API (exact counts) — approximation only
+- [x] ✅ Anthropic `count_tokens` API (exact counts) — `count::count_tokens_exact` + `count_tokens_or_approx` (exact when keyed, approximate fallback on no-key/network/shape error); verified against a mock upstream. Live call needs `ANTHROPIC_API_KEY` (absent here) — runtime blocker, code complete.
 
 ## §10 Proxy
 - [x] ✅ Anthropic request compression — `tool_result` string + array content (Plan 20); non-tool content types are out of scope by design (we compress tool outputs only)
@@ -84,9 +84,8 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Real-incumbent benchmark** needs external pip/npm installs (LLMLingua-2 = Python, Headroom = Python, Tamp = Node). Plan: attempt the installs; if the sandbox blocks network/install, the shell-out ADAPTERS are still built and the specific blocker is reported here — the adapters are "done," the live run is gated on the tool being present.
 
 ## Tally (update every change)
-Updated after Plan 27 (B3): **53 ✅ / 0 ⚠️ / 2 ❌ (+2 🚫).** B3 closed dependency-free. Two ❌ remain, both **env-gated** — BUILD the code now, attempt the runtime, name any blocker (never silent-skip):
-- **`count_tokens` exact API** — build the Anthropic client; the live call is blocked by **no `ANTHROPIC_API_KEY`** in this env (confirmed) → report blocker, keep the approximate counter as the fallback.
-- **§12 real-incumbent baselines** — build the shell-out `Compressor` adapter + scripts (the §12 seam); attempt `pip install llmlingua` / `npm i tamp` (Python 3.14 here likely lacks torch wheels → probable blocker; report what installs).
+Updated after Plan 28 (count_tokens): **54 ✅ / 0 ⚠️ / 1 ❌ (+2 🚫).** ONE item left:
+- **§12 real-incumbent baselines** — build the shell-out `Compressor` *seam* (the spec's deliverable: "invoked uniformly via a CLI seam; we do not reimplement them") + a grounded LLMLingua-2 adapter; attempt `pip install llmlingua` and report. (Headroom/Tamp identities/APIs unconfirmed → same seam + documented template, honest note.)
 
-When these 2 are built (code merged) with their runtime status honestly reported, the spec is fully implemented.
+When the seam is built + tested with the live LLMLingua-2 run attempted + reported, the spec is fully implemented.
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
