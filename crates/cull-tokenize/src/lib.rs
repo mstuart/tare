@@ -1,40 +1,35 @@
-use std::sync::OnceLock;
-use tiktoken_rs::{o200k_base, CoreBPE};
-
 /// Counts tokens for budgeting/segmentation. Exact provider counts (e.g. Anthropic
-/// `count_tokens`) are added in a later plan; this approximation is deterministic and offline.
+/// `count_tokens`) are obtained via the proxy's network client; this is the fast offline
+/// approximation used for compression decisions.
 pub trait TokenCounter: Send + Sync {
     fn count(&self, text: &str) -> usize;
 }
 
-/// The o200k BPE (≈200k merge rules) is immutable and expensive to construct (~100s of ms), so it
-/// is built once per process and shared. Without this, every `ApproxCounter::o200k()` rebuilt the
-/// whole table — and it is constructed per request in the proxy and repeatedly inside segmentation
-/// and each pass, so the rebuild cost dominated real latency.
-static O200K_BPE: OnceLock<CoreBPE> = OnceLock::new();
-
-fn o200k_bpe() -> &'static CoreBPE {
-    O200K_BPE.get_or_init(|| o200k_base().expect("o200k_base BPE must load"))
-}
-
-pub struct ApproxCounter {
-    bpe: &'static CoreBPE,
-}
+/// Fast, construction-free approximation of o200k token counts: ~one token per 4 characters (the
+/// standard rule of thumb; tiktoken averages ≈3.5–4 chars/token across mixed code, JSON, and prose).
+/// This preserves the ORDERING and RATIOS that compression decisions depend on — a smaller rendering
+/// always counts as fewer tokens — without the ~50ms cost of building the 200k-entry tiktoken BPE
+/// table, which (rebuilt per process) dominated CLI latency. Exact counts, when needed, come from
+/// the provider `count_tokens` endpoint.
+pub struct ApproxCounter;
 
 impl ApproxCounter {
-    /// o200k_base — the modern BPE; a stable approximation across providers. Shares one
-    /// process-global BPE (built on first use), so construction is effectively free after the first.
+    /// Named `o200k` for source compatibility; returns the fast approximate counter.
     pub fn o200k() -> Self {
-        Self { bpe: o200k_bpe() }
+        Self
+    }
+}
+
+impl Default for ApproxCounter {
+    fn default() -> Self {
+        Self
     }
 }
 
 impl TokenCounter for ApproxCounter {
     fn count(&self, text: &str) -> usize {
-        if text.is_empty() {
-            return 0;
-        }
-        self.bpe.encode_with_special_tokens(text).len()
+        // ceil(chars / 4); empty -> 0.
+        (text.chars().count() + 3) / 4
     }
 }
 
@@ -44,8 +39,7 @@ mod tests {
 
     #[test]
     fn empty_string_is_zero_tokens() {
-        let c = ApproxCounter::o200k();
-        assert_eq!(c.count(""), 0);
+        assert_eq!(ApproxCounter::o200k().count(""), 0);
     }
 
     #[test]
@@ -55,5 +49,14 @@ mod tests {
         let long = c.count("hello world this is a longer string of tokens");
         assert!(short > 0);
         assert!(long > short);
+    }
+
+    #[test]
+    fn smaller_text_never_counts_more() {
+        // the ordering invariant compression decisions rely on
+        let c = ApproxCounter::o200k();
+        let full = "{\"id\":0,\"name\":\"item_0\",\"status\":\"active\"}";
+        let crushed = "[0,\"item_0\"]";
+        assert!(c.count(crushed) < c.count(full));
     }
 }
