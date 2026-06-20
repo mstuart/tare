@@ -8,7 +8,7 @@ use axum::{
     Router,
 };
 use bytes::Bytes;
-use crate::{compress_anthropic_request, CompressOpts};
+use crate::{compress_anthropic_request_reported, CompressOpts};
 
 pub struct ProxyState {
     pub client: reqwest::Client,
@@ -39,12 +39,12 @@ async fn handle_messages(
     };
 
     // compress if the body is JSON; otherwise forward unchanged (never reject)
-    let forward_body: Vec<u8> = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+    let (forward_body, report) = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
         Ok(req_json) => {
-            let compressed = compress_anthropic_request(&req_json, &state.opts);
-            serde_json::to_vec(&compressed).unwrap_or_else(|_| body_bytes.to_vec())
+            let (compressed, report) = compress_anthropic_request_reported(&req_json, &state.opts);
+            (serde_json::to_vec(&compressed).unwrap_or_else(|_| body_bytes.to_vec()), report)
         }
-        Err(_) => body_bytes.to_vec(),
+        Err(_) => (body_bytes.to_vec(), None),
     };
 
     let url = format!("{}/v1/messages", state.upstream.trim_end_matches('/'));
@@ -64,6 +64,12 @@ async fn handle_messages(
                 let kn = k.as_str();
                 if kn == "content-length" || kn == "transfer-encoding" || kn == "connection" { continue; }
                 builder = builder.header(k, v);
+            }
+            if let Some(r) = &report {
+                builder = builder
+                    .header("x-cull-input-tokens", r.input_tokens.to_string())
+                    .header("x-cull-net-tokens", r.net_tokens.to_string())
+                    .header("x-cull-dropped", r.dropped.to_string());
             }
             builder
                 .body(Body::from_stream(resp.bytes_stream()))

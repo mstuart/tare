@@ -64,3 +64,42 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
     let v: serde_json::Value = serde_json::from_str(&received).unwrap();
     assert_eq!(v["messages"].as_array().unwrap().len(), 4);
 }
+
+#[tokio::test]
+async fn proxy_response_carries_cull_report_headers() {
+    // 1. mock upstream
+    let rec: Recorder = Arc::new(Mutex::new(None));
+    let upstream = Router::new().route("/v1/messages", post(upstream_handler)).with_state(rec.clone());
+    let up_port = spawn(upstream).await;
+
+    // 2. cull proxy -> mock upstream
+    let state = Arc::new(ProxyState {
+        client: reqwest::Client::new(),
+        upstream: format!("http://127.0.0.1:{up_port}"),
+        opts: CompressOpts { enabled: true, recency_keep: 1 },
+    });
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // 3. compressible request with tool results
+    let req = serde_json::json!({
+        "model":"claude-x","max_tokens":100,
+        "messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"kafka partitions offsets totally unrelated"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"jwt authentication middleware"}]},
+            {"role":"user","content":"fix the authentication jwt bug"}
+        ]
+    });
+    let resp = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+        .header("x-api-key", "sk-test")
+        .json(&req)
+        .send().await.unwrap();
+
+    // upstream received compressed body AND response has x-cull-net-tokens header
+    let received = rec.lock().unwrap().clone().expect("upstream received a body");
+    assert!(received.contains("[cull"), "upstream body was compressed: {received}");
+    assert!(resp.headers().get("x-cull-net-tokens").is_some(),
+        "response carries x-cull-net-tokens header; got headers: {:?}", resp.headers());
+}
