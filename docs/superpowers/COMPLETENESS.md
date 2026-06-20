@@ -24,18 +24,18 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 
 ## §8 Cache-aware planner
 - [x] ✅ Economic model formulas — `cull-cache`
-- [ ] ❌ Model WIRED into live compress/skip decisions (verified: used NOWHERE outside cull-cache)
-- [ ] ⚠️ Rule 1 immutable prefix — I3 enforces frozen=Keep, but no `CachePrefixCommitment` tracking in live flow
-- [ ] ❌ Rule 2 write-amortization gate (formula exists, never applied)
+- [x] ✅ Model informs a runtime decision — proxy savings gate (Plan 14)
+- [ ] ❌ Rule 1 immutable prefix — REAL GAP: proxy may compress an OLD `tool_result` inside the agent's cached prefix → busts cache. Needs `cache_control`-breakpoint awareness (→ cache-boundary plan)
+- [x] ✅ Rule 2 write-amortization — N/A by design: proxy does NO cache-write (whole-unit drop + lossless delta, not net-negative CCR); savings gate covers trivial gain
 - [x] ✅ Rule 3 stability-ordered segmentation
 - [x] ✅ Rule 4 tail-only eviction
-- [ ] ❌ Rule 5 hit-rate-floor monitor
-- [ ] ⚠️ Rule 6 provider-aware costs (model only, not applied)
-- [x] ✅ Rule 7 no reformatting in frozen zone (lossless, structural)
-- [ ] ❌ Rule 8 tool-definition freeze
-- [ ] ⚠️ Rule 9 delta-before-full-resend (IVM deltas, but not gated by this rule)
-- [ ] ❌ Rule 10 compress-once-not-incrementally (no boundary logic)
-- [ ] ❌ Boundary detection (when to compress)
+- [ ] ❌ Rule 5 hit-rate-floor monitor — REAL GAP: needs parsing response `usage` (cache_read/creation) to track hit rate + halt (→ cache-boundary plan)
+- [ ] ⚠️ Rule 6 provider-aware costs — model is provider-aware; the proxy gate uses a flat `min_savings`, not per-provider costs
+- [x] ✅ Rule 7 no reformatting in frozen zone (lossless)
+- [x] ✅ Rule 8 tool-definition freeze — proxy never modifies `tools`
+- [x] ✅ Rule 9 delta-before-full-resend (IVM deltas re-reads)
+- [x] ✅ Rule 10 compress-once — one plan computed + applied per request, not incrementally
+- [ ] ⚠️ Boundary detection — savings gate is the per-request decision; full cache-boundary awareness pending (→ cache-boundary plan)
 
 ## §9 Invariants
 - [x] ✅ I1 net-non-negative
@@ -43,7 +43,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ I3 cached-prefix immutable (frozen)
 - [x] ✅ I4 exact-token-class preservation
 - [x] ✅ I5 lossless reconstruction (verifiable delta)
-- [ ] ❌ I6 quality floor (compress-to-a-quality-floor loop) — not implemented
+- [x] ✅ I6 quality floor — `Planner::with_floor`; eviction never compresses below floor*input
 
 ## §6 Session state & tokenization
 - [ ] ⚠️ Session-state TYPES exist but are NEVER threaded (verified: only `::default()` placeholders outside `session.rs`)
@@ -84,4 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 13: roughly 21 ✅ / 7 ⚠️ / 19 ❌. **NOT DONE.** (Plan 13 wired the full pass set + report into the proxy.)
+Updated after Plan 14: roughly 27 ✅ / 6 ⚠️ / 14 ❌. **NOT DONE.**
+Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
