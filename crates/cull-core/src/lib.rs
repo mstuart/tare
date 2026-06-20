@@ -22,6 +22,8 @@ pub use passes::IvmDeltaPass;
 pub use passes::EnvelopeDedupPass;
 pub use passes::ReasoningTracePass;
 pub mod embed;
+#[cfg(feature = "neural-embed")]
+pub mod embed_neural;
 pub mod json_crush;
 pub mod schema_slim;
 pub mod predicate;
