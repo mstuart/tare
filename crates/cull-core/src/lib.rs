@@ -19,5 +19,6 @@ pub use passes::ExactDedupPass;
 pub use passes::RelevancePass;
 pub use passes::IvmDeltaPass;
 pub use passes::EnvelopeDedupPass;
+pub mod code;
 pub mod emit;
 pub use emit::{emit, EmittedSegment, FidelityReport};
