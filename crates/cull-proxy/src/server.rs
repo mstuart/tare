@@ -2,13 +2,13 @@ use std::sync::Arc;
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
     Router,
 };
 use bytes::Bytes;
-use crate::{compress_anthropic_request_reported, CompressOpts};
+use crate::{compress_anthropic_request_reported, compress_openai_request_reported, CompressOpts, FidelityReport};
 
 pub struct ProxyState {
     pub client: reqwest::Client,
@@ -19,6 +19,7 @@ pub struct ProxyState {
 pub fn app(state: Arc<ProxyState>) -> Router {
     Router::new()
         .route("/v1/messages", post(handle_messages))
+        .route("/v1/chat/completions", post(handle_chat))
         .with_state(state)
 }
 
@@ -27,27 +28,25 @@ const FORWARD_HEADERS: &[&str] = &[
     "x-api-key", "authorization", "anthropic-version", "anthropic-beta", "content-type",
 ];
 
-async fn handle_messages(
-    State(state): State<Arc<ProxyState>>,
-    req: Request,
-) -> Response {
-    let (parts, body) = req.into_parts();
-    let headers = parts.headers;
-    let body_bytes: Bytes = match axum::body::to_bytes(body, usize::MAX).await {
-        Ok(b) => b,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("failed to read body: {e}")).into_response(),
-    };
+type CompressFn = fn(&serde_json::Value, &CompressOpts) -> (serde_json::Value, Option<FidelityReport>);
 
+async fn handle_generic(
+    state: Arc<ProxyState>,
+    headers: HeaderMap,
+    body_bytes: Bytes,
+    upstream_path: &str,
+    compress_fn: CompressFn,
+) -> Response {
     // compress if the body is JSON; otherwise forward unchanged (never reject)
     let (forward_body, report) = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
         Ok(req_json) => {
-            let (compressed, report) = compress_anthropic_request_reported(&req_json, &state.opts);
+            let (compressed, report) = compress_fn(&req_json, &state.opts);
             (serde_json::to_vec(&compressed).unwrap_or_else(|_| body_bytes.to_vec()), report)
         }
         Err(_) => (body_bytes.to_vec(), None),
     };
 
-    let url = format!("{}/v1/messages", state.upstream.trim_end_matches('/'));
+    let url = format!("{}{}", state.upstream.trim_end_matches('/'), upstream_path);
     let mut fwd = state.client.post(&url).body(forward_body);
     for name in FORWARD_HEADERS {
         if let Some(v) = headers.get(*name) {
@@ -77,4 +76,22 @@ async fn handle_messages(
         }
         Err(e) => (StatusCode::BAD_GATEWAY, format!("cull-proxy upstream error: {e}")).into_response(),
     }
+}
+
+async fn handle_messages(State(state): State<Arc<ProxyState>>, req: Request) -> Response {
+    let (parts, body) = req.into_parts();
+    let body_bytes: Bytes = match axum::body::to_bytes(body, usize::MAX).await {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("failed to read body: {e}")).into_response(),
+    };
+    handle_generic(state, parts.headers, body_bytes, "/v1/messages", compress_anthropic_request_reported).await
+}
+
+async fn handle_chat(State(state): State<Arc<ProxyState>>, req: Request) -> Response {
+    let (parts, body) = req.into_parts();
+    let body_bytes: Bytes = match axum::body::to_bytes(body, usize::MAX).await {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("failed to read body: {e}")).into_response(),
+    };
+    handle_generic(state, parts.headers, body_bytes, "/v1/chat/completions", compress_openai_request_reported).await
 }
