@@ -29,8 +29,8 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Rule 2 write-amortization — N/A by design: proxy does NO cache-write (whole-unit drop + lossless delta, not net-negative CCR); savings gate covers trivial gain
 - [x] ✅ Rule 3 stability-ordered segmentation
 - [x] ✅ Rule 4 tail-only eviction
-- [ ] ❌ Rule 5 hit-rate-floor monitor — REAL GAP: needs parsing response `usage` (cache_read/creation) to track hit rate + halt (→ cache-boundary plan)
-- [ ] ⚠️ Rule 6 provider-aware costs — model is provider-aware; the proxy gate uses a flat `min_savings`, not per-provider costs
+- [x] ✅ Rule 5 hit-rate-floor monitor — per-session `HitRateMonitor` fed by a response-stream tee that reads `cache_read`/`cache_creation`; halts compression after 3 consecutive sub-floor turns — `monitor.rs` + `server.rs`
+- [x] ✅ Rule 6 provider-aware costs — provider detected per route (+ 5m/1h from `cache_control.ttl`); the hit-rate floor and economics derive from that provider's `W`/`R` via `CacheModel` (`min_savings` remains a flat trivial-gain guard by design)
 - [x] ✅ Rule 7 no reformatting in frozen zone (lossless)
 - [x] ✅ Rule 8 tool-definition freeze — proxy never modifies `tools`
 - [x] ✅ Rule 9 delta-before-full-resend (IVM deltas re-reads)
@@ -60,6 +60,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Cross-turn compression via full-history requests (Anthropic resends history each call; an explicit cross-request store is unnecessary for stateless Anthropic)
 - [x] ✅ Supersession + IVM wired into the proxy (via `tool_use` metadata: name→class, input.path→path)
 - [x] ✅ FidelityReport surfaced from the proxy (`x-cull-*` response headers)
+- [x] ✅ State: per-session — `ProxyState.monitors` keyed by a stable session hash (`system` + first message); holds the hit-rate monitor (§10 State)
 
 ## §11 Emitter / fidelity report
 - [x] ✅ FidelityReport — `emit.rs`
@@ -83,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Real-incumbent benchmark** needs external pip/npm installs (LLMLingua-2 = Python, Headroom = Python, Tamp = Node). Plan: attempt the installs; if the sandbox blocks network/install, the shell-out ADAPTERS are still built and the specific blocker is reported here — the adapters are "done," the live run is gated on the tool being present.
 
 ## Tally (update every change)
-Updated after Plan 23 (D1): roughly 39 ✅ / 3 ⚠️ / 2 ❌ (+2 🚫). **NOT DONE.** Remaining real: R5 hit-rate, R6 provider-aware gate, §6 session-state threading, B3 embedding, count_tokens, §12 depth/incumbents (several env-gated).
+Updated after Plan 24 (R5 + R6 + §10 per-session state): roughly 42 ✅ / 2 ⚠️ / 1 ❌ headline (+2 🚫); §12 has its own ❌ cluster below. **NOT DONE.** Remaining genuinely-buildable-now: §6 session-state threading into the planner (⚠️ → real `SessionState`), §12 benchmark depth (downstream-task fidelity, tool-call fidelity, divergence rate, cache-hit-rate impact, bigger corpus). Env-gated (attempt + report blocker, never silent-skip): B3 embedding salience (fastembed model download), `count_tokens` exact API (network), §12 real-incumbent adapters (LLMLingua-2/Headroom/Tamp installs).
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
