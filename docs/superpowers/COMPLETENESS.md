@@ -16,7 +16,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ B1 Query taint/program-slice — tree-sitter symbol resolution (rust/py/js/ts/go) + transitive symbol-closure slice — `passes/relevance.rs`, `code.rs`
 - [x] ✅ B2 PRF query expansion — achieved by the transitive symbol-closure (propagating relevant segments' symbols IS PRF expansion; BM25-top-k weighting is a refinement)
 - [ ] ❌ B3 Embedding / logprob salience
-- [ ] ❌ B4 Reasoning-trace pruning
+- [x] ✅ B4 Reasoning-trace pruning — `passes/reasoning.rs` (drop old inconclusive reasoning, keep conclusions + recent)
 - [ ] ⚠️ C1 Belady-oracle eviction — recency+relevance priority, NO plan lookahead
 - [ ] ❌ C2 ARC freq×recency + task-phase decay
 - [x] ✅ C3 Tail-only eviction (frozen never evicted)
@@ -84,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 17: roughly 30 ✅ / 5 ⚠️ / 12 ❌. **NOT DONE.** (B1 tree-sitter slice + B2 via transitive closure.)
+Updated after Plan 18: roughly 31 ✅ / 5 ⚠️ / 11 ❌. **NOT DONE.**
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
