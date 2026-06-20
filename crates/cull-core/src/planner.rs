@@ -16,10 +16,13 @@ pub trait Pass {
     fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry>;
 }
 
-pub struct Planner { passes: Vec<Box<dyn Pass>> }
+pub struct Planner { passes: Vec<Box<dyn Pass>>, min_keep_ratio: Option<f64> }
 
 impl Planner {
-    pub fn new(passes: Vec<Box<dyn Pass>>) -> Self { Self { passes } }
+    pub fn new(passes: Vec<Box<dyn Pass>>) -> Self { Self { passes, min_keep_ratio: None } }
+
+    /// Quality floor (spec I6): eviction will not reduce net below `ratio * input` tokens.
+    pub fn with_floor(mut self, ratio: f64) -> Self { self.min_keep_ratio = Some(ratio); self }
 
     /// Plan with no task signal (query-conditioned passes are inert).
     pub fn plan(&self, segments: &[Segment], session: &SessionState) -> CompressionPlan {
@@ -49,7 +52,14 @@ impl Planner {
             }
         }
         enforce_invariants(&mut actions, segments);
-        if let Some(b) = budget { evict_to_budget(&mut actions, segments, task, b); }
+        if let Some(b) = budget {
+            let input: u32 = segments.iter().map(|s| s.token_count).sum();
+            let floor_tokens = self.min_keep_ratio
+                .map(|r| (r * input as f64).ceil() as u32)
+                .unwrap_or(0);
+            let effective = b.max(floor_tokens);
+            evict_to_budget(&mut actions, segments, task, effective);
+        }
         CompressionPlan {
             entries: segments.iter().zip(actions).map(|(s, a)| PlanEntry { id: s.id, action: a }).collect(),
         }
@@ -291,5 +301,28 @@ mod tests {
         let plan = Planner::new(vec![Box::new(DropFrozenPass)]).plan(&segs, &SessionState::default());
         assert_eq!(plan.entries[0].action, SegmentAction::Keep);
         assert_eq!(plan.entries[1].action, SegmentAction::Drop(DropReason::Evicted));
+    }
+
+    #[test]
+    fn quality_floor_prevents_over_compression() {
+        let task = TaskSignal::from_text("nothing relevant here");
+        // 4 fast segments, 100 tokens each = 400; tiny budget would evict almost all,
+        // but a 0.5 floor keeps >= 200 tokens.
+        let segs = vec![
+            kb(0, 0, MutationClass::Fast, 100, "aaa"), kb(1, 1, MutationClass::Fast, 100, "bbb"),
+            kb(2, 2, MutationClass::Fast, 100, "ccc"), kb(3, 3, MutationClass::Fast, 100, "ddd"),
+        ];
+        let plan = Planner::new(vec![]).with_floor(0.5)
+            .plan_with_budget(&segs, &SessionState::default(), &task, Some(10));
+        let net = crate::plan::net_tokens(&plan, &segs);
+        assert!(net >= 200, "quality floor keeps >= 50% of input: net={net}");
+    }
+
+    #[test]
+    fn no_floor_evicts_to_budget_as_before() {
+        let task = TaskSignal::from_text("x");
+        let segs = vec![kb(0,0,MutationClass::Fast,100,"a"), kb(1,1,MutationClass::Fast,100,"b")];
+        let plan = Planner::new(vec![]).plan_with_budget(&segs, &SessionState::default(), &task, Some(100));
+        assert!(crate::plan::net_tokens(&plan, &segs) <= 100);
     }
 }

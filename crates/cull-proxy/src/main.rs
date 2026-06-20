@@ -11,7 +11,7 @@ async fn main() {
     let state = Arc::new(ProxyState {
         client: reqwest::Client::new(),
         upstream,
-        opts: CompressOpts { enabled, recency_keep },
+        opts: CompressOpts { enabled, recency_keep, min_savings: 0 },
     });
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
