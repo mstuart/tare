@@ -46,12 +46,12 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ I6 quality floor — `Planner::with_floor`; eviction never compresses below floor*input
 
 ## §6 Session state & tokenization
-- [ ] ⚠️ Session-state TYPES exist but are NEVER threaded (verified: only `::default()` placeholders outside `session.rs`)
+- [x] ✅ Session-state threaded + consumed — `SupersessionPass` reads the persisted `ToolClassRegistry`; `SessionEngine` (internal mode) accumulates `tools`/`files`/`prefix` across turns and plans against them — `engine.rs`, `passes/supersession.rs`. (IVM delta still bases off in-request segments; cross-store deltas would need a stored-base `Reconstruct` variant — bounded follow-up. Hosted-model proxy stays stateless by design.)
 - [x] ✅ ApproxCounter token counting
 - [ ] ❌ Anthropic `count_tokens` API (exact counts) — approximation only
 
 ## §10 Proxy
-- [ ] ⚠️ Anthropic request compression — `tool_result` STRING content only
+- [x] ✅ Anthropic request compression — `tool_result` string + array content (Plan 20); non-tool content types are out of scope by design (we compress tool outputs only)
 - [x] ✅ `tool_result` array content (text blocks inside array content compressed) — `cull-proxy`
 - [x] 🚫 `system` / `tools` compression — DELIBERATE justified omission (research: schema compression → tool-name confusion; `system` = load-bearing instructions). Resolved by decision.
 - [x] ✅ OpenAI support — `/v1/chat/completions` compression + route (`cull-proxy`)
@@ -84,5 +84,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Real-incumbent benchmark** needs external pip/npm installs (LLMLingua-2 = Python, Headroom = Python, Tamp = Node). Plan: attempt the installs; if the sandbox blocks network/install, the shell-out ADAPTERS are still built and the specific blocker is reported here — the adapters are "done," the live run is gated on the tool being present.
 
 ## Tally (update every change)
-Updated after Plan 24 (R5 + R6 + §10 per-session state): roughly 42 ✅ / 2 ⚠️ / 1 ❌ headline (+2 🚫); §12 has its own ❌ cluster below. **NOT DONE.** Remaining genuinely-buildable-now: §6 session-state threading into the planner (⚠️ → real `SessionState`), §12 benchmark depth (downstream-task fidelity, tool-call fidelity, divergence rate, cache-hit-rate impact, bigger corpus). Env-gated (attempt + report blocker, never silent-skip): B3 embedding salience (fastembed model download), `count_tokens` exact API (network), §12 real-incumbent adapters (LLMLingua-2/Headroom/Tamp installs).
+Updated after Plan 25 (§6 session threading): **47 ✅ / 1 ⚠️ / 7 ❌ (+2 🚫).** **NOT DONE.** The entire remaining surface is §12 benchmark + 3 env-gated items:
+- **Genuinely-buildable-now (§12 harness depth):** corpus ⚠️ (bigger/real traces) + 4 ❌ metrics — downstream-task fidelity, tool-call fidelity, false-negative/divergence rate, cache-hit-rate impact. These are pure harness logic — BUILD them next.
+- **Env-gated (attempt + name the blocker, never silent-skip):** B3 embedding salience ❌ (fastembed model download), `count_tokens` exact API ❌ (Anthropic network), §12 real-incumbent adapters ❌ (LLMLingua-2/Headroom/Tamp pip/npm installs). For each: build the code/adapter; if the sandbox blocks the download/network/install, the adapter is "done" and the specific blocker is reported in the section above.
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
