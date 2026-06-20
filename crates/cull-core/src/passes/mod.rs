@@ -4,6 +4,7 @@ pub mod relevance;
 pub mod ivm;
 pub mod envelope;
 pub mod reasoning;
+pub mod salience;
 
 pub use supersession::SupersessionPass;
 pub use dedup::ExactDedupPass;
@@ -11,6 +12,7 @@ pub use relevance::RelevancePass;
 pub use ivm::IvmDeltaPass;
 pub use envelope::EnvelopeDedupPass;
 pub use reasoning::ReasoningTracePass;
+pub use salience::EmbeddingSaliencePass;
 
 use crate::planner::Pass;
 
