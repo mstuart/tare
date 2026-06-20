@@ -10,7 +10,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 
 ## §7 Passes
 - [x] ✅ A1 Supersession decay — `passes/supersession.rs`
-- [ ] ⚠️ A2 File-read IVM/delta — works WITHIN one request only; NOT across turns (no session store) — `passes/ivm.rs`
+- [x] ✅ A2 File-read IVM/delta — wired into the proxy over full-history requests (cross-turn) — `passes/ivm.rs` + `cull-proxy`
 - [ ] ❌ A3 RePair / n-gram envelope dedup — only exact-content dedup exists
 - [ ] ❌ A4 Content-defined chunking (CDC/Merkle) + cross-session dedup
 - [ ] ⚠️ B1 Query taint/program-slice — symbol-overlap only, NOT the tree-sitter dependency DAG — `passes/relevance.rs`
@@ -57,14 +57,14 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [ ] ❌ OpenAI support
 - [x] ✅ Streaming response passthrough
 - [x] ✅ Transparency mode (`CULL_ENABLED=0`)
-- [ ] ❌ Stateful per-session (canonical store + tool registry across turns)
-- [ ] ❌ Supersession + IVM wired into the proxy (needs session state)
-- [ ] ❌ FidelityReport surfaced from the proxy
+- [x] ✅ Cross-turn compression via full-history requests (Anthropic resends history each call; an explicit cross-request store is unnecessary for stateless Anthropic)
+- [x] ✅ Supersession + IVM wired into the proxy (via `tool_use` metadata: name→class, input.path→path)
+- [x] ✅ FidelityReport surfaced from the proxy (`x-cull-*` response headers)
 
 ## §11 Emitter / fidelity report
 - [x] ✅ FidelityReport — `emit.rs`
 - [x] ✅ Surfaced in CLI
-- [ ] ❌ Surfaced from proxy
+- [x] ✅ Surfaced from proxy (`x-cull-*` headers)
 
 ## §12 Benchmark
 - [ ] ⚠️ Corpus — 3 small in-repo items (spec wants real agent traces / SWE-bench-style)
@@ -84,4 +84,4 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Audited 2026-06-20: roughly 16 ✅ / 9 ⚠️ / 22 ❌. **NOT DONE.**
+Updated after Plan 13: roughly 21 ✅ / 7 ⚠️ / 19 ❌. **NOT DONE.** (Plan 13 wired the full pass set + report into the proxy.)
