@@ -8,6 +8,7 @@ name = "cull-proxy"
 path = "src/main.rs"
 
 [dependencies]
+cull-cache = { path = "../cull-cache" }
 cull-core = { path = "../cull-core" }
 cull-tokenize = { path = "../cull-tokenize" }
 serde = { workspace = true }
@@ -16,6 +17,8 @@ axum = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 bytes = "1"
+async-stream = "0.3"
+futures-util = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
