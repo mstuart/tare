@@ -4,10 +4,11 @@ use crate::segment::{Segment, SegmentId};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DropReason { Superseded, IrrelevantBySlice, Duplicate, Evicted, StaleOutput }
 
-/// How a Replace's `rendered` bytes recover the original. Currently delta-against-a-base-segment;
-/// other reversible encodings (e.g. dictionary dedup) add variants here later.
+/// How a Replace's `rendered` bytes recover the original. `Delta` is a unified diff against a base
+/// segment; `JsonColumnar` is a self-contained columnar encoding of a repetitive JSON array
+/// (value-lossless, reversible by `json_crush::expand`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reconstruct { Delta { base: SegmentId } }
+pub enum Reconstruct { Delta { base: SegmentId }, JsonColumnar }
 
 /// Drop removes a WHOLE unit (allowed). Replace substitutes a LOSSLESS smaller representation:
 /// `rendered` (a unified diff) is what gets sent; `reconstruct` says how to recover the exact
@@ -59,6 +60,13 @@ pub fn replace_is_lossless(
                 Some(base_seg) => apply_unified_diff(&base_seg.bytes, rendered)
                     .map_or(false, |r| r == original.bytes),
                 None => false,
+            },
+            Reconstruct::JsonColumnar => match (
+                std::str::from_utf8(&original.bytes),
+                std::str::from_utf8(rendered),
+            ) {
+                (Ok(orig), Ok(rend)) => crate::json_crush::round_trips(orig, rend),
+                _ => false,
             },
         },
         _ => true,
