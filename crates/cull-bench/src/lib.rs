@@ -300,13 +300,17 @@ pub struct BoardRow {
     pub cache_prefix_kept: f64,    // cache-hit proxy: fraction whose stable prefix (block 0) is preserved byte-identical at the output head
 }
 
-/// Run every compressor over every corpus item at a fixed budget; aggregate ratio + four fidelity
-/// metrics. Metrics are structural (content/param survival + stable-prefix preservation) — the
-/// necessary conditions for correct downstream behavior, computed without a live model.
+/// Run the three built-in compressors over the corpus at a fixed budget.
 pub fn run_benchmark(corpus: &[BenchItem], budget: u32) -> Vec<BoardRow> {
+    run_benchmark_with(corpus, budget, Vec::new())
+}
+
+/// Like `run_benchmark`, plus any external baselines (shell-out incumbents) appended to the board.
+pub fn run_benchmark_with(corpus: &[BenchItem], budget: u32, extra: Vec<Box<dyn Compressor>>) -> Vec<BoardRow> {
     let counter = ApproxCounter::o200k();
-    let compressors: Vec<Box<dyn Compressor>> =
+    let mut compressors: Vec<Box<dyn Compressor>> =
         vec![Box::new(NoCompression), Box::new(NaiveTruncation), Box::new(Cull)];
+    compressors.extend(extra);
 
     compressors.iter().map(|c| {
         let mut ratios = Vec::new();
@@ -406,6 +410,16 @@ mod tests {
         let full = NoCompression.compress(&item.blocks, item.task, budget);
         assert!(c.net_tokens < full.net_tokens);
         assert!(t.net_tokens <= full.net_tokens);
+    }
+
+    #[test]
+    fn run_benchmark_with_includes_extra_compressors() {
+        let extra: Vec<Box<dyn Compressor>> = vec![Box::new(ShellCompressor::new("cat-pass", "cat", vec![]))];
+        let board = run_benchmark_with(&corpus(), 60, extra);
+        assert_eq!(board.len(), 4); // 3 built-ins + cat-pass
+        let cat = board.iter().find(|r| r.name == "cat-pass").expect("cat-pass row present");
+        // cat is a passthrough -> every needle survives -> downstream fidelity 1.0
+        assert_eq!(cat.downstream_fidelity, 1.0);
     }
 
     #[test]
