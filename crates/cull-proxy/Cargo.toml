@@ -8,6 +8,7 @@ name = "cull-proxy"
 path = "src/main.rs"
 
 [dependencies]
+cull-cache = { path = "../cull-cache" }
 cull-core = { path = "../cull-core" }
 cull-tokenize = { path = "../cull-tokenize" }
 serde = { workspace = true }
