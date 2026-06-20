@@ -13,7 +13,7 @@ impl Pass for SupersessionPass {
     fn name(&self) -> &'static str { "supersession-decay" }
 
     fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
-        // latest position per class
+        // latest position per class WITHIN this request
         let mut latest: HashMap<&str, usize> = HashMap::new();
         for s in ctx.segments {
             if let SegmentKind::ToolOutput { class } = &s.kind {
@@ -21,10 +21,15 @@ impl Pass for SupersessionPass {
                 if s.position > *e { *e = s.position; }
             }
         }
-        // drop earlier same-class outputs
+        // drop earlier same-class outputs (in-request OR a newer run in the persisted registry)
         ctx.segments.iter().filter_map(|s| {
             if let SegmentKind::ToolOutput { class } = &s.kind {
-                if s.position < latest[class.as_str()] {
+                let class = class.as_str();
+                let in_request_superseded = s.position < latest[class];
+                let registry_superseded = ctx.session.tools.latest_run(class)
+                    .map(|run| run.turn > s.origin.turn)
+                    .unwrap_or(false);
+                if in_request_superseded || registry_superseded {
                     return Some(PlanEntry { id: s.id, action: SegmentAction::Drop(DropReason::Superseded) });
                 }
             }
@@ -82,5 +87,25 @@ mod tests {
         let plan = Planner::new(vec![Box::new(SupersessionPass)]).plan(&segs, &SessionState::default());
         assert_eq!(plan.entries[0].action, SegmentAction::Keep); // conversation turn untouched
         assert_eq!(plan.entries[1].action, SegmentAction::Keep); // only one ToolOutput of class "x"
+    }
+
+    #[test]
+    fn registry_supersedes_old_output_not_in_slice() {
+        let mut session = SessionState::default();
+        session.tools.record("cargo-test", 9, Some(0)); // a newer run recorded out-of-band (turn 9)
+        let mut s = tool_seg(0, "cargo-test");
+        s.origin.turn = 2;                               // this output predates the recorded run
+        let plan = Planner::new(vec![Box::new(SupersessionPass)]).plan(&[s], &session);
+        assert_eq!(plan.entries[0].action, SegmentAction::Drop(DropReason::Superseded));
+    }
+
+    #[test]
+    fn registry_keeps_output_newer_than_recorded_run() {
+        let mut session = SessionState::default();
+        session.tools.record("cargo-test", 1, Some(0)); // recorded run is OLDER than the output
+        let mut s = tool_seg(0, "cargo-test");
+        s.origin.turn = 5;
+        let plan = Planner::new(vec![Box::new(SupersessionPass)]).plan(&[s], &session);
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep);
     }
 }
