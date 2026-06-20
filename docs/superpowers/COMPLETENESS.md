@@ -52,8 +52,8 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 
 ## §10 Proxy
 - [ ] ⚠️ Anthropic request compression — `tool_result` STRING content only
-- [ ] ❌ `tool_result` array content
-- [ ] ❌ `system` / `tools` compression
+- [x] ✅ `tool_result` array content (text blocks inside array content compressed) — `cull-proxy`
+- [x] 🚫 `system` / `tools` compression — DELIBERATE justified omission (research: schema compression → tool-name confusion; `system` = load-bearing instructions). Resolved by decision.
 - [ ] ❌ OpenAI support
 - [x] ✅ Streaming response passthrough
 - [x] ✅ Transparency mode (`CULL_ENABLED=0`)
@@ -84,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 19: roughly 33 ✅ / 4 ⚠️ / 9 ❌. **NOT DONE.** (C1+C2 eviction.)
+Updated after Plan 20: roughly 34 ✅ / 4 ⚠️ / 7 ❌ (+1 🚫 resolved). **NOT DONE.**
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
