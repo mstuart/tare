@@ -74,6 +74,22 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
         }
     }
 
+    // cached-prefix boundary: last (mi, bi) carrying cache_control (block-level or message-level)
+    let mut boundary: Option<(usize, usize)> = None;
+    if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
+        for (mi, m) in msgs.iter().enumerate() {
+            if m.get("cache_control").is_some() { boundary = Some((mi, usize::MAX)); }
+            if let Some(blocks) = m.get("content").and_then(Value::as_array) {
+                for (bi, b) in blocks.iter().enumerate() {
+                    if b.get("cache_control").is_some() { boundary = Some((mi, bi)); }
+                }
+            }
+        }
+    }
+    let in_cached_prefix = |mi: usize, bi: usize| -> bool {
+        match boundary { Some((bm, bb)) => (mi, bi) <= (bm, bb), None => false }
+    };
+
     // pass 2: collect tool_result contents (string or array-of-text) with rich kind + path, and their locations
     let mut raws: Vec<RawBlock> = Vec::new();
     let mut locs: Vec<(usize, usize, Option<usize>)> = Vec::new();
@@ -82,6 +98,7 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
             let Some(blocks) = m.get("content").and_then(Value::as_array) else { continue; };
             for (bi, b) in blocks.iter().enumerate() {
                 if b.get("type").and_then(Value::as_str) == Some("tool_result") {
+                    if in_cached_prefix(mi, bi) { continue; }
                     let (class, path) = b.get("tool_use_id").and_then(Value::as_str)
                         .and_then(|id| meta.get(id)).cloned()
                         .unwrap_or_else(|| ("tool_result".to_string(), None));
@@ -440,6 +457,40 @@ mod tests {
     fn openai_disabled_is_passthrough() {
         let req = serde_json::json!({"model":"x","messages":[{"role":"user","content":"hi"}]});
         assert_eq!(compress_openai_request(&req, &CompressOpts { enabled: false, recency_keep: 4, min_savings: 0 }), req);
+    }
+
+    #[test]
+    fn does_not_compress_tool_results_inside_cached_prefix() {
+        // breakpoint on the FIRST tool_result block -> it (and everything before) is cached and untouchable;
+        // several post-breakpoint tool_results follow (enough to age below the recency window),
+        // making the oldest post-breakpoint irrelevant block eligible for relevance pruning.
+        let req = serde_json::json!({"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"g1","name":"grep","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"kafka registry unrelated junk in the CACHED prefix one two three",
+                "cache_control":{"type":"ephemeral"}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint zero"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint one"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint two"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint three"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint four"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint five"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1",
+                "content":"also unrelated kafka content AFTER the breakpoint six"}]},
+            {"role":"user","content":"do something about authentication jwt"}
+        ]});
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        // the cached (pre-breakpoint) tool_result is byte-identical
+        assert_eq!(out["messages"][1]["content"][0]["content"], req["messages"][1]["content"][0]["content"]);
+        // the oldest post-breakpoint irrelevant block (aged out of recency window) is elided
+        let after = out["messages"][2]["content"][0]["content"].as_str().unwrap();
+        assert!(after.contains("[cull"), "post-breakpoint irrelevant output compressed: {after}");
     }
 
     #[test]
