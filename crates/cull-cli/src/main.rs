@@ -23,6 +23,10 @@ enum Command {
         #[arg(long)]
         budget: Option<u32>,
     },
+    /// Opt-in LOSSY transform: strip pure JSON-Schema metadata annotations ($schema, title, $id,
+    /// $comment, examples) from tool/function definitions read on stdin. Preserves property names,
+    /// types, required, and descriptions. Separate from the lossless `compress` pipeline by design.
+    SlimSchema,
 }
 
 fn main() {
@@ -51,6 +55,16 @@ fn main() {
                 }
                 Err(e) => { eprintln!("error: {e}"); std::process::exit(1); }
             }
+        }
+        Command::SlimSchema => {
+            let mut input = String::new();
+            if std::io::stdin().read_to_string(&mut input).is_err() {
+                eprintln!("error: failed to read stdin");
+                std::process::exit(1);
+            }
+            // passthrough if not slimmable (not JSON / no smaller result)
+            let out = cull_core::schema_slim::slim(&input).unwrap_or(input);
+            println!("{out}");
         }
     }
 }
