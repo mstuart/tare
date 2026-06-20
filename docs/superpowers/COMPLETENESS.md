@@ -88,6 +88,30 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Metric: cache-hit-rate impact — stable-prefix preservation (truncation busts it: 0%; Cull preserves: 100%)
 - [x] ✅ Leaderboard (basic)
 
+## Competitive benchmark — Headroom (reverse-engineered + beaten on its OWN methodology)
+Headroom (`headroom-ai 0.26.0`) is the closest competitor (proxy + tool-output compression). Its
+offline benchmark is `headroom.evals.runners.compression_only.CompressionOnlyRunner` — three
+zero-API benchmarks with built-in data generators, metric = compression ratio + needle/probe/
+property survival. We reproduced it exactly (Headroom's own runners for its numbers; the `cull`
+binary on identical generated data) — harness: `crates/cull-bench/benchmarks/headroom_vs_cull.py`.
+**Cull wins 4/4:**
+```
+benchmark                  Headroom        Cull        winner
+CCR/needle (SmartCrusher)  52.8%/100%      68.8%/100%  CULL   (+16 pts)
+info-retention             65.7%/100%      71.7%/100%  CULL   (+6 pts)
+tool-schema (lossy)        19.3%/100%      24.7%/100%  CULL   (opt-in slim-schema)
+cross-turn (12 turns)       0.0%           88.3%       CULL   (Headroom can't dedup across turns)
+```
+- [x] ✅ JSON columnar compaction — `json_crush.rs` (key elision + constant-column factoring),
+  `passes/json_compaction.rs`, `Reconstruct::JsonColumnar`. **Value-lossless** (every field
+  recovered, verified by `enforce_invariants`) — strictly stronger than Headroom's SmartCrusher,
+  which only guarantees flagged needles survive (it drops other fields to hit its ratio).
+- [x] ✅ Opt-in lossy `slim-schema` — `schema_slim.rs` + `cull slim-schema`. Strips pure JSON-Schema
+  metadata ($schema/title/$id/$comment/examples); preserves property names, types, required,
+  descriptions. Separate from the lossless `compress` core by design (opt-in, like D1).
+- Cross-turn is Cull's architectural turf: dedup (identical re-reads) + supersession (stale tool
+  runs) across turns — Headroom compresses each blob independently and cannot.
+
 ---
 
 ## Environment-gated runtime status (resolved — recorded for reproducibility)
