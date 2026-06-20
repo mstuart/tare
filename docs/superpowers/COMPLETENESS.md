@@ -17,8 +17,8 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ B2 PRF query expansion — achieved by the transitive symbol-closure (propagating relevant segments' symbols IS PRF expansion; BM25-top-k weighting is a refinement)
 - [ ] ❌ B3 Embedding / logprob salience
 - [x] ✅ B4 Reasoning-trace pruning — `passes/reasoning.rs` (drop old inconclusive reasoning, keep conclusions + recent)
-- [ ] ⚠️ C1 Belady-oracle eviction — recency+relevance priority, NO plan lookahead
-- [ ] ❌ C2 ARC freq×recency + task-phase decay
+- [x] ✅ C1 Belady-oracle eviction — future-need = task ∪ `CompactSummary` plan/state symbols (`planner.rs`)
+- [x] ✅ C2 ARC freq×recency + phase — co-reference frequency + position phase-decay (`planner.rs`)
 - [x] ✅ C3 Tail-only eviction (frozen never evicted)
 - [ ] ❌ D1 Predicate pushdown (built OFF-by-default is acceptable; not-built is not)
 
@@ -84,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 18: roughly 31 ✅ / 5 ⚠️ / 11 ❌. **NOT DONE.**
+Updated after Plan 19: roughly 33 ✅ / 4 ⚠️ / 9 ❌. **NOT DONE.** (C1+C2 eviction.)
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
