@@ -2,18 +2,22 @@ pub mod supersession;
 pub mod dedup;
 pub mod relevance;
 pub mod ivm;
+pub mod envelope;
 
 pub use supersession::SupersessionPass;
 pub use dedup::ExactDedupPass;
 pub use relevance::RelevancePass;
 pub use ivm::IvmDeltaPass;
+pub use envelope::EnvelopeDedupPass;
 
 use crate::planner::Pass;
 
 /// The default structural pass pipeline, in run order: supersession (drops obsolete tool outputs),
-/// IVM/delta (changed re-reads become unified diffs), then exact dedup (drops identical leftovers).
+/// IVM/delta (changed re-reads become unified diffs), envelope dedup (lossless delta of repetitive
+/// tool-output envelopes), then exact dedup (drops identical leftovers).
 pub fn structural_passes() -> Vec<Box<dyn Pass>> {
-    vec![Box::new(SupersessionPass), Box::new(IvmDeltaPass::new()), Box::new(ExactDedupPass)]
+    vec![Box::new(SupersessionPass), Box::new(IvmDeltaPass::new()),
+         Box::new(EnvelopeDedupPass::new()), Box::new(ExactDedupPass)]
 }
 
 /// The default query-conditioned pass pipeline. Currently the deterministic RelevancePass;
@@ -59,7 +63,7 @@ mod tests {
     #[test]
     fn structural_passes_returns_both_passes() {
         let passes = super::structural_passes();
-        assert_eq!(passes.len(), 3);
+        assert_eq!(passes.len(), 4);
     }
 
     #[test]
@@ -86,7 +90,7 @@ mod tests {
 
     #[test]
     fn structural_passes_has_three_passes() {
-        assert_eq!(super::structural_passes().len(), 3);
+        assert_eq!(super::structural_passes().len(), 4);
     }
 }
 
