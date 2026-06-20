@@ -26,16 +26,32 @@ impl Pass for RelevancePass {
     fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
         if ctx.task.is_empty() { return Vec::new(); }
         let max_pos = ctx.segments.iter().map(|s| s.position).max().unwrap_or(0);
-        ctx.segments.iter().filter_map(|s| {
+
+        // symbols per segment
+        let seg_syms: Vec<std::collections::HashSet<String>> = ctx.segments.iter()
+            .map(|s| extract_symbols(&String::from_utf8_lossy(&s.bytes)))
+            .collect();
+
+        // BFS: relevance propagates from task-overlapping segments through shared symbols
+        let mut relevant = vec![false; ctx.segments.len()];
+        let mut active: std::collections::HashSet<String> = ctx.task.symbols.clone();
+        loop {
+            let mut changed = false;
+            for i in 0..ctx.segments.len() {
+                if !relevant[i] && !seg_syms[i].is_disjoint(&active) {
+                    relevant[i] = true;
+                    for s in &seg_syms[i] { active.insert(s.clone()); }
+                    changed = true;
+                }
+            }
+            if !changed { break; }
+        }
+
+        ctx.segments.iter().enumerate().filter_map(|(i, s)| {
             if !is_droppable_kind(&s.kind) { return None; }
             if max_pos.saturating_sub(s.position) < self.recency_keep { return None; }
-            let text = String::from_utf8_lossy(&s.bytes);
-            let seg_symbols = extract_symbols(&text);
-            if seg_symbols.is_disjoint(&ctx.task.symbols) {
-                Some(PlanEntry { id: s.id, action: SegmentAction::Drop(DropReason::IrrelevantBySlice) })
-            } else {
-                None
-            }
+            if relevant[i] { return None; }
+            Some(PlanEntry { id: s.id, action: SegmentAction::Drop(DropReason::IrrelevantBySlice) })
         }).collect()
     }
 }
@@ -88,5 +104,22 @@ mod tests {
         let plan = Planner::new(vec![Box::new(RelevancePass { recency_keep: 0 })])
             .plan_with_task(&segs, &SessionState::default(), &task);
         assert_eq!(plan.entries[0].action, SegmentAction::Keep);
+    }
+
+    #[test]
+    fn relevance_propagates_transitively_through_shared_symbols() {
+        // task mentions "auth"; seg A (auth+jwt) is direct; seg B (jwt+middleware) connects via "jwt";
+        // seg C (kafka) is unconnected and old -> dropped.
+        let task = TaskSignal::from_text("auth subsystem");
+        let segs = vec![
+            seg(0, 0, SegmentKind::FileRead, "auth login session jwt"),       // direct (auth)
+            seg(1, 1, SegmentKind::FileRead, "jwt verify middleware token"),  // transitive via jwt
+            seg(2, 2, SegmentKind::FileRead, "kafka broker partitions offset"),// unconnected
+        ];
+        let plan = Planner::new(vec![Box::new(RelevancePass { recency_keep: 0 })])
+            .plan_with_task(&segs, &SessionState::default(), &task);
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep);                          // direct
+        assert_eq!(plan.entries[1].action, SegmentAction::Keep);                          // transitive — kept
+        assert_eq!(plan.entries[2].action, SegmentAction::Drop(DropReason::IrrelevantBySlice)); // unconnected
     }
 }
