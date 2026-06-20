@@ -3,12 +3,14 @@ pub mod dedup;
 pub mod relevance;
 pub mod ivm;
 pub mod envelope;
+pub mod reasoning;
 
 pub use supersession::SupersessionPass;
 pub use dedup::ExactDedupPass;
 pub use relevance::RelevancePass;
 pub use ivm::IvmDeltaPass;
 pub use envelope::EnvelopeDedupPass;
+pub use reasoning::ReasoningTracePass;
 
 use crate::planner::Pass;
 
@@ -23,7 +25,7 @@ pub fn structural_passes() -> Vec<Box<dyn Pass>> {
 /// The default query-conditioned pass pipeline. Currently the deterministic RelevancePass;
 /// PRF and embedding-salience passes are added here in a later plan.
 pub fn query_passes() -> Vec<Box<dyn Pass>> {
-    vec![Box::new(RelevancePass::default())]
+    vec![Box::new(RelevancePass::default()), Box::new(ReasoningTracePass::default())]
 }
 
 #[cfg(test)]
@@ -128,6 +130,6 @@ mod query_tests {
 
     #[test]
     fn query_passes_returns_relevance_pass() {
-        assert_eq!(super::query_passes().len(), 1);
+        assert_eq!(super::query_passes().len(), 2);
     }
 }
