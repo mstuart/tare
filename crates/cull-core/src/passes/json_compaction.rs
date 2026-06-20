@@ -36,6 +36,11 @@ impl Pass for JsonCompactionPass {
         ctx.segments
             .iter()
             .filter_map(|s| {
+                // Compaction targets tool OUTPUTS (API responses, command results); file reads are
+                // code/text handled by the IVM/delta path and kept verbatim.
+                if matches!(s.kind, crate::segment::SegmentKind::FileRead) {
+                    return None;
+                }
                 let text = std::str::from_utf8(&s.bytes).ok()?;
                 let crushed = crush(text)?;
                 let token_count = self.counter.count(&crushed) as u32;
