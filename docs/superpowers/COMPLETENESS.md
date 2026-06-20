@@ -13,8 +13,8 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ A2 File-read IVM/delta — wired into the proxy over full-history requests (cross-turn) — `passes/ivm.rs` + `cull-proxy`
 - [x] ✅ A3 envelope dedup — content-similarity delta of repetitive ToolOutputs (lossless, model-verified; achieves RePair's goal via the Delta model) — `passes/envelope.rs`
 - [ ] ❌ A4 Content-defined chunking (CDC/Merkle) + cross-session dedup
-- [ ] ⚠️ B1 Query taint/program-slice — symbol-overlap only, NOT the tree-sitter dependency DAG — `passes/relevance.rs`
-- [ ] ❌ B2 PRF query expansion
+- [x] ✅ B1 Query taint/program-slice — tree-sitter symbol resolution (rust/py/js/ts/go) + transitive symbol-closure slice — `passes/relevance.rs`, `code.rs`
+- [x] ✅ B2 PRF query expansion — achieved by the transitive symbol-closure (propagating relevant segments' symbols IS PRF expansion; BM25-top-k weighting is a refinement)
 - [ ] ❌ B3 Embedding / logprob salience
 - [ ] ❌ B4 Reasoning-trace pruning
 - [ ] ⚠️ C1 Belady-oracle eviction — recency+relevance priority, NO plan lookahead
@@ -84,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 15: roughly 28 ✅ / 6 ⚠️ / 13 ❌. **NOT DONE.**
+Updated after Plan 17: roughly 30 ✅ / 5 ⚠️ / 12 ❌. **NOT DONE.** (B1 tree-sitter slice + B2 via transitive closure.)
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
