@@ -6,6 +6,7 @@ pub mod envelope;
 pub mod reasoning;
 pub mod salience;
 pub mod json_compaction;
+pub mod log_compaction;
 
 pub use supersession::SupersessionPass;
 pub use dedup::ExactDedupPass;
@@ -15,6 +16,7 @@ pub use envelope::EnvelopeDedupPass;
 pub use reasoning::ReasoningTracePass;
 pub use salience::EmbeddingSaliencePass;
 pub use json_compaction::JsonCompactionPass;
+pub use log_compaction::LogCompactionPass;
 
 use crate::planner::Pass;
 
@@ -24,7 +26,7 @@ use crate::planner::Pass;
 pub fn structural_passes() -> Vec<Box<dyn Pass>> {
     vec![Box::new(SupersessionPass), Box::new(IvmDeltaPass::new()),
          Box::new(EnvelopeDedupPass::new()), Box::new(ExactDedupPass),
-         Box::new(JsonCompactionPass::new())]
+         Box::new(JsonCompactionPass::new()), Box::new(LogCompactionPass::new())]
 }
 
 /// The default query-conditioned pass pipeline. Currently the deterministic RelevancePass;
@@ -70,7 +72,7 @@ mod tests {
     #[test]
     fn structural_passes_returns_both_passes() {
         let passes = super::structural_passes();
-        assert_eq!(passes.len(), 5);
+        assert_eq!(passes.len(), 6);
     }
 
     #[test]
@@ -97,7 +99,7 @@ mod tests {
 
     #[test]
     fn structural_passes_has_three_passes() {
-        assert_eq!(super::structural_passes().len(), 5);
+        assert_eq!(super::structural_passes().len(), 6);
     }
 }
 
