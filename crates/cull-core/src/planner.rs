@@ -75,28 +75,46 @@ fn action_tokens(action: &SegmentAction, seg: &Segment) -> u32 {
     }
 }
 
-/// Higher = keep. Task-relevant segments dominate; among equals, more recent (higher position) wins.
-fn eviction_priority(seg: &Segment, task: &crate::task::TaskSignal) -> u64 {
-    let relevant = if task.is_empty() {
-        false
-    } else {
-        let syms = crate::task::extract_symbols(&String::from_utf8_lossy(&seg.bytes));
-        !syms.is_disjoint(&task.symbols)
-    };
-    (relevant as u64) * 1_000_000_000 + seg.position as u64
-}
-
-/// Drop lowest-priority non-frozen survivors until net <= budget (spec §7 C, §8 Rule 4).
+/// Drop lowest-priority non-frozen survivors until net <= budget (spec §7 C1/C2, §8 Rule 4).
+///
+/// Priority = future-need (dominant) × frequency × recency.
+///   C1 future-need: segment intersects task symbols ∪ symbols of any CompactSummary (running plan/state).
+///   C2 frequency: how many other segments co-reference its symbols (frequently-referenced = important).
+///   Phase/recency: position — earlier = discovery phase, decays/evicts first.
+/// Lowest priority evicted first; frozen never evicted.
 fn evict_to_budget(actions: &mut [SegmentAction], segments: &[Segment], task: &crate::task::TaskSignal, budget: u32) {
     let mut net: u32 = actions.iter().zip(segments).map(|(a, s)| action_tokens(a, s)).sum();
     if net <= budget { return; }
-    // candidate indices: non-frozen, currently surviving (Keep or Replace)
+
+    // symbol sets (path-aware, tree-sitter for code)
+    let syms: Vec<std::collections::HashSet<String>> = segments.iter()
+        .map(|s| crate::code::extract_symbols_for(&String::from_utf8_lossy(&s.bytes), s.origin.path.as_deref()))
+        .collect();
+
+    // C1 future-need signal: task symbols ∪ symbols of any CompactSummary (running plan/state)
+    let mut future = task.symbols.clone();
+    for (i, s) in segments.iter().enumerate() {
+        if matches!(s.kind, crate::segment::SegmentKind::CompactSummary) {
+            for x in &syms[i] { future.insert(x.clone()); }
+        }
+    }
+
+    // C2 co-reference frequency
+    let freq: Vec<u32> = (0..segments.len()).map(|i| {
+        (0..segments.len()).filter(|&j| j != i && !syms[i].is_disjoint(&syms[j])).count() as u32
+    }).collect();
+
+    // priority: future-need dominates, then frequency, then recency (position = phase: early decays first)
+    let priority = |i: usize| -> u64 {
+        let future_need = if !future.is_empty() && !syms[i].is_disjoint(&future) { 1u64 } else { 0 };
+        future_need * 1_000_000_000 + (freq[i] as u64) * 100_000 + segments[i].position as u64
+    };
+
     let mut cands: Vec<usize> = (0..segments.len())
         .filter(|&i| segments[i].mutation_class != MutationClass::Frozen
             && !matches!(actions[i], SegmentAction::Drop(_)))
         .collect();
-    // ascending priority => lowest priority (old + irrelevant) evicted first
-    cands.sort_by_key(|&i| eviction_priority(&segments[i], task));
+    cands.sort_by_key(|&i| priority(i)); // ascending: lowest priority evicted first
     for i in cands {
         if net <= budget { break; }
         let saved = action_tokens(&actions[i], &segments[i]);
@@ -356,6 +374,26 @@ mod tests {
                     reconstruct: Reconstruct::Delta { base: s0.id }, reason: DropReason::Duplicate } },
             ]
         }
+    }
+
+    #[test]
+    fn eviction_prefers_future_needed_and_frequently_referenced() {
+        let task = TaskSignal::from_text("auth");
+        // budget forces dropping 1 of the 3 fast segments.
+        // - seg1 shares "auth" with the task (future-needed) -> keep
+        // - seg2 shares "session" with a CompactSummary plan/state (future-needed) -> keep
+        // - seg3 is unrelated + old -> evicted
+        let mut s1 = kb(1, 1, MutationClass::Fast, 100, "auth login flow");
+        let mut s2 = kb(2, 2, MutationClass::Fast, 100, "session token rotation");
+        let mut plan_seg = kb(3, 3, MutationClass::Fast, 1, "next: refactor session handling");
+        plan_seg.kind = SegmentKind::CompactSummary;
+        let s3 = kb(0, 0, MutationClass::Fast, 100, "kafka broker partitions offset");
+        let segs = vec![s3, s1, s2, plan_seg];
+        let plan = Planner::new(vec![]).plan_with_budget(&segs, &SessionState::default(), &task, Some(201));
+        // total ~301; budget 201 -> drop ~100. The unrelated old seg (entry 0) goes first.
+        assert_eq!(plan.entries[0].action, SegmentAction::Drop(DropReason::Evicted));
+        assert_eq!(plan.entries[1].action, SegmentAction::Keep); // auth (task)
+        assert_eq!(plan.entries[2].action, SegmentAction::Keep); // session (plan/state)
     }
 
     #[test]
