@@ -1,7 +1,6 @@
 use crate::plan::{DropReason, PlanEntry, SegmentAction};
 use crate::planner::{Pass, PlanCtx};
 use crate::segment::SegmentKind;
-use crate::task::extract_symbols;
 
 /// Query-conditioned relevance pruning (spec §7 B1, deterministic v1). Drops droppable
 /// tool-result/file-read segments whose symbols are disjoint from the task query symbols,
@@ -27,9 +26,10 @@ impl Pass for RelevancePass {
         if ctx.task.is_empty() { return Vec::new(); }
         let max_pos = ctx.segments.iter().map(|s| s.position).max().unwrap_or(0);
 
-        // symbols per segment
+        // symbols per segment (path-aware: tree-sitter for known code extensions, regex otherwise)
         let seg_syms: Vec<std::collections::HashSet<String>> = ctx.segments.iter()
-            .map(|s| extract_symbols(&String::from_utf8_lossy(&s.bytes)))
+            .map(|s| crate::code::extract_symbols_for(
+                &String::from_utf8_lossy(&s.bytes), s.origin.path.as_deref()))
             .collect();
 
         // BFS: relevance propagates from task-overlapping segments through shared symbols
@@ -104,6 +104,21 @@ mod tests {
         let plan = Planner::new(vec![Box::new(RelevancePass { recency_keep: 0 })])
             .plan_with_task(&segs, &SessionState::default(), &task);
         assert_eq!(plan.entries[0].action, SegmentAction::Keep);
+    }
+
+    #[test]
+    fn relevance_uses_treesitter_symbols_for_code_paths() {
+        // task references a function name; a code file defining it (path .rs) must be kept,
+        // an unrelated code file dropped — symbols come from the AST, not loose words.
+        let task = TaskSignal::from_text("fix validate_session");
+        let mut a = seg(0, 0, SegmentKind::FileRead, "fn validate_session(t: Token) { check(t) }");
+        a.origin.path = Some("session.rs".into());
+        let mut b = seg(1, 1, SegmentKind::FileRead, "fn render_button() { draw() }");
+        b.origin.path = Some("ui.rs".into());
+        let plan = Planner::new(vec![Box::new(RelevancePass { recency_keep: 0 })])
+            .plan_with_task(&[a, b], &SessionState::default(), &task);
+        assert_eq!(plan.entries[0].action, SegmentAction::Keep);
+        assert_eq!(plan.entries[1].action, SegmentAction::Drop(DropReason::IrrelevantBySlice));
     }
 
     #[test]
