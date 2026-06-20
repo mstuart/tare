@@ -11,7 +11,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 ## §7 Passes
 - [x] ✅ A1 Supersession decay — `passes/supersession.rs`
 - [x] ✅ A2 File-read IVM/delta — wired into the proxy over full-history requests (cross-turn) — `passes/ivm.rs` + `cull-proxy`
-- [ ] ❌ A3 RePair / n-gram envelope dedup — only exact-content dedup exists
+- [x] ✅ A3 envelope dedup — content-similarity delta of repetitive ToolOutputs (lossless, model-verified; achieves RePair's goal via the Delta model) — `passes/envelope.rs`
 - [ ] ❌ A4 Content-defined chunking (CDC/Merkle) + cross-session dedup
 - [ ] ⚠️ B1 Query taint/program-slice — symbol-overlap only, NOT the tree-sitter dependency DAG — `passes/relevance.rs`
 - [ ] ❌ B2 PRF query expansion
@@ -84,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 14: roughly 27 ✅ / 6 ⚠️ / 14 ❌. **NOT DONE.**
+Updated after Plan 15: roughly 28 ✅ / 6 ⚠️ / 13 ❌. **NOT DONE.**
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
