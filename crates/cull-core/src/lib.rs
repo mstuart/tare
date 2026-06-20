@@ -15,6 +15,7 @@ pub mod task;
 pub use task::TaskSignal;
 pub mod passes;
 pub use passes::SupersessionPass;
+pub mod engine;
 pub use passes::ExactDedupPass;
 pub use passes::RelevancePass;
 pub use passes::IvmDeltaPass;
