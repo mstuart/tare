@@ -20,7 +20,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ C1 Belady-oracle eviction — future-need = task ∪ `CompactSummary` plan/state symbols (`planner.rs`)
 - [x] ✅ C2 ARC freq×recency + phase — co-reference frequency + position phase-decay (`planner.rs`)
 - [x] ✅ C3 Tail-only eviction (frozen never evicted)
-- [ ] ❌ D1 Predicate pushdown (built OFF-by-default is acceptable; not-built is not)
+- [x] ✅ D1 Predicate pushdown — `predicate::narrow_tool_call` narrows over-broad searches to a task-relevant path; integration point is a tool-execution hook (the model-boundary proxy can't rewrite tool calls) — `code.rs`-adjacent `predicate.rs`
 
 ## §8 Cache-aware planner
 - [x] ✅ Economic model formulas — `cull-cache`
@@ -81,8 +81,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 
 ## Genuine environment blockers (surface explicitly, never silently skip)
 - **Real-incumbent benchmark** needs external pip/npm installs (LLMLingua-2 = Python, Headroom = Python, Tamp = Node). Plan: attempt the installs; if the sandbox blocks network/install, the shell-out ADAPTERS are still built and the specific blocker is reported here — the adapters are "done," the live run is gated on the tool being present.
-- **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 22: roughly 38 ✅ / 3 ⚠️ / 3 ❌ (+2 🚫). **NOT DONE.** Remaining real: R5 hit-rate, R6, B3 embedding, count_tokens, D1, §12 depth/incumbents (several env-gated).
+Updated after Plan 23 (D1): roughly 39 ✅ / 3 ⚠️ / 2 ❌ (+2 🚫). **NOT DONE.** Remaining real: R5 hit-rate, R6 provider-aware gate, §6 session-state threading, B3 embedding, count_tokens, §12 depth/incumbents (several env-gated).
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
