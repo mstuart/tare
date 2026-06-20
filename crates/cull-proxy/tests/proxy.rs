@@ -207,3 +207,32 @@ async fn halts_compression_after_three_low_hit_rate_turns() {
         "turn 4 should be uncompressed passthrough: {}", bodies[3]);
     assert!(last_halted, "turn 4 response carries x-cull-halted");
 }
+
+#[tokio::test]
+async fn count_tokens_exact_parses_input_tokens_and_falls_back() {
+    use axum::{routing::post, Router, body::Bytes};
+    use cull_proxy::count::{count_tokens_exact, count_tokens_or_approx};
+
+    // mock Anthropic count_tokens endpoint
+    async fn counter(_b: Bytes) -> &'static str { "{\"input_tokens\":1234}" }
+    let upstream = Router::new().route("/v1/messages/count_tokens", post(counter));
+    let port = spawn(upstream).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let base = format!("http://127.0.0.1:{port}");
+    let client = reqwest::Client::new();
+    let body = serde_json::json!({"model":"claude-x","messages":[{"role":"user","content":"hi"}]});
+
+    // exact path: mock returns 1234
+    let n = count_tokens_exact(&client, &base, "sk-test", "2023-06-01", &body).await.unwrap();
+    assert_eq!(n, 1234);
+    let (c, exact) = count_tokens_or_approx(&client, &base, Some("sk-test"), "2023-06-01", &body, 999).await;
+    assert_eq!((c, exact), (1234, true));
+
+    // fallback path: no key -> approximate, exact=false (no network call made)
+    let (c2, exact2) = count_tokens_or_approx(&client, &base, None, "2023-06-01", &body, 999).await;
+    assert_eq!((c2, exact2), (999, false));
+
+    // fallback path: bad base (connection refused) -> approximate, exact=false
+    let (c3, exact3) = count_tokens_or_approx(&client, "http://127.0.0.1:1", Some("sk-test"), "2023-06-01", &body, 777).await;
+    assert_eq!((c3, exact3), (777, false));
+}

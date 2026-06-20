@@ -1,5 +1,6 @@
 pub mod server;
 pub mod monitor;
+pub mod count;
 
 use std::collections::HashMap;
 use serde_json::Value;
