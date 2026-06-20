@@ -134,8 +134,34 @@ def main() -> int:
     print(f"{'cross-turn (12 turns)':<24} {hr_saved:>8.1%}/  - {cull_saved:>8.1%}/  -    {'CULL' if win else 'headroom'}")
     print("  (repeated re-reads + superseded test runs; Headroom compresses each blob independently)")
 
+    # 5. Scaling sweep — Cull vs Headroom's SmartCrusher directly, across JSON-dict-array sizes.
+    #    (Headroom advertises 86-100% on "JSON arrays of dicts"; this shows what SmartCrusher
+    #    actually reaches vs Cull on identical data, lossless, needle-preserved.)
     print("-" * 74)
-    print(f"Cull wins {wins}/{total} benchmarks.")
+    try:
+        from headroom.transforms.smart_crusher import SmartCrusher, SmartCrusherConfig
+        crusher = SmartCrusher(config=SmartCrusherConfig())
+        print("scaling (JSON dict arrays)   SmartCrusher       Cull   needle  winner")
+        for n in (20, 100, 500, 1000):
+            items = [{"id": i, "name": f"item_{i}", "value": i * 1.5, "status": "active",
+                      "region": "us-east-1"} for i in range(n)]
+            items[n // 2] = {"id": n // 2, "name": "item_X", "value": 999.99, "status": "error",
+                             "region": "us-east-1", "error_code": "ERR-9931"}
+            content = json.dumps(items, indent=2)
+            sc = crusher.crush(content).compressed
+            cu = cull_compress(content)
+            sc_r, cu_r = 1 - est(sc) / est(content), 1 - est(cu) / est(content)
+            ok = "ERR-9931" in sc and "ERR-9931" in cu
+            win = cu_r > sc_r
+            wins += win
+            total += 1
+            print(f"  {n:>4} items                 {sc_r:>8.1%}   {cu_r:>8.1%}   "
+                  f"{'both' if ok else 'CHECK':>5}   {'CULL' if win else 'SmartCrusher'}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  (SmartCrusher scaling skipped: {e})")
+
+    print("-" * 74)
+    print(f"Cull wins {wins}/{total} measured comparisons.")
     return 0
 
 

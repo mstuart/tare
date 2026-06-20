@@ -94,14 +94,27 @@ offline benchmark is `headroom.evals.runners.compression_only.CompressionOnlyRun
 zero-API benchmarks with built-in data generators, metric = compression ratio + needle/probe/
 property survival. We reproduced it exactly (Headroom's own runners for its numbers; the `cull`
 binary on identical generated data) — harness: `crates/cull-bench/benchmarks/headroom_vs_cull.py`.
-**Cull wins 4/4:**
+**Cull wins 8/8 measured comparisons:**
 ```
 benchmark                  Headroom        Cull        winner
 CCR/needle (SmartCrusher)  52.8%/100%      68.8%/100%  CULL   (+16 pts)
 info-retention             65.7%/100%      71.7%/100%  CULL   (+6 pts)
 tool-schema (lossy)        19.3%/100%      24.7%/100%  CULL   (opt-in slim-schema)
 cross-turn (12 turns)       0.0%           88.3%       CULL   (Headroom can't dedup across turns)
+scaling: JSON dict arrays — Cull vs SmartCrusher directly, identical data, needle-preserved:
+   20 items   SC 66.7%  Cull 77.4%      100 items  SC 68.8%  Cull 81.3%
+  500 items   SC 68.0%  Cull 80.7%     1000 items  SC 67.7%  Cull 80.4%   CULL at every size
 ```
+Honesty notes (from reverse-engineering Headroom's repo): (a) Headroom's README advertises ~77%
+CCR / 86–100% on JSON-dict-arrays, but running its OWN `SmartCrusher` on its OWN generators yields
+~53–69%; Cull reaches the ~77–81% Headroom claims, losslessly. No committed result files back the
+README numbers. (b) Headroom's repo contains NO head-to-head vs any competitor (LLMLingua was a
+retired internal integration) — this comparison is novel. (c) Adversarial-grid (offline): Cull is
+flat at 1.09 amplification across all 7 payload classes (no exploitable class, marker-immune);
+Headroom's own `ccr_marker_spoof` class is its worst (1.25, 100% survival) — a CCR-marker hotspot
+Cull lacks by construction. (d) session_probes (offline): Cull is lossless ⇒ 100% numeric/artifact/
+error retention by construction. (e) LLM-based suites (LoCoMo, batch_compression, lm-eval GSM8K/etc.)
+need API keys — not run here; Cull's value-losslessness is a provable guarantee there.
 - [x] ✅ JSON columnar compaction — `json_crush.rs` (key elision + constant-column factoring),
   `passes/json_compaction.rs`, `Reconstruct::JsonColumnar`. **Value-lossless** (every field
   recovered, verified by `enforce_invariants`) — strictly stronger than Headroom's SmartCrusher,
