@@ -25,6 +25,11 @@ impl CacheModel {
         hit_rate > (self.write_mult - 1.0) / (self.write_mult - self.read_mult)
     }
 
+    /// Provider hit-rate floor = break-even h below which caching is net-negative: (W-1)/(W-R).
+    pub fn hit_rate_floor(&self) -> f64 {
+        (self.write_mult - 1.0) / (self.write_mult - self.read_mult)
+    }
+
     /// Compress-once-at-boundary pays off when n_future > W / ((1-c) * R),
     /// where c = compressed_tokens / original_tokens (c < 1 means smaller).
     pub fn amortization_gate(&self, compression_ratio: f64, n_future_turns: u32) -> bool {
@@ -66,6 +71,16 @@ mod tests {
         assert!(a5.amortization_gate(0.6, 32));
         assert!(!a5.amortization_gate(0.6, 31));
         assert!(!a5.amortization_gate(1.0, 10_000)); // no compression never amortizes
+    }
+
+    #[test]
+    fn hit_rate_floor_matches_break_even() {
+        let a5 = CacheModel::for_provider(Provider::Anthropic5m);
+        assert!((a5.hit_rate_floor() - 0.21739).abs() < 1e-4); // (1.25-1)/(1.25-0.1)
+        let a1 = CacheModel::for_provider(Provider::Anthropic1h);
+        assert!((a1.hit_rate_floor() - 0.52632).abs() < 1e-4); // (2-1)/(2-0.1)
+        let oa = CacheModel::for_provider(Provider::OpenAi);
+        assert!(oa.hit_rate_floor().abs() < 1e-9);             // (1-1)/(1-0.1) = 0
     }
 
     #[test]
