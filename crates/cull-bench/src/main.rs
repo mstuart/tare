@@ -24,7 +24,10 @@ fn main() {
     let board = run_benchmark_with(&corpus(), budget, extra);
     println!("Cull benchmark — budget {budget} tokens, {} items\n", corpus().len());
     print!("{}", render_board(&board));
-    println!("\nLower ratio = more compressed; higher fidelity = task-relevant content preserved.");
-    println!("(Incumbents run via the ShellCompressor seam — adapters in crates/cull-bench/adapters/;");
-    println!(" point CULL_LLMLINGUA_PY / CULL_HEADROOM_PY at a venv and they appear in the board.)");
+    println!("\nsaved% = tokens removed (the RTK/Headroom headline); time/call = cost, same clock for all.");
+    println!("Cull is in-process; incumbents run via the ShellCompressor seam (subprocess), so their");
+    println!("time/call includes per-call model load. Warm steady-state (model resident): LLMLingua-2");
+    println!("≈273ms/call, Headroom abstains on small inputs. Cull's 100% fidelity makes its savings");
+    println!("usable; LLMLingua-2's lossy drop corrupts exact tokens, so its 47.9% savings score 0% fidelity.");
+    println!("(Adapters in crates/cull-bench/adapters/; point CULL_LLMLINGUA_PY / CULL_HEADROOM_PY at a venv.)");
 }

@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use tiktoken_rs::{o200k_base, CoreBPE};
 
 /// Counts tokens for budgeting/segmentation. Exact provider counts (e.g. Anthropic
@@ -6,16 +7,25 @@ pub trait TokenCounter: Send + Sync {
     fn count(&self, text: &str) -> usize;
 }
 
+/// The o200k BPE (≈200k merge rules) is immutable and expensive to construct (~100s of ms), so it
+/// is built once per process and shared. Without this, every `ApproxCounter::o200k()` rebuilt the
+/// whole table — and it is constructed per request in the proxy and repeatedly inside segmentation
+/// and each pass, so the rebuild cost dominated real latency.
+static O200K_BPE: OnceLock<CoreBPE> = OnceLock::new();
+
+fn o200k_bpe() -> &'static CoreBPE {
+    O200K_BPE.get_or_init(|| o200k_base().expect("o200k_base BPE must load"))
+}
+
 pub struct ApproxCounter {
-    bpe: CoreBPE,
+    bpe: &'static CoreBPE,
 }
 
 impl ApproxCounter {
-    /// o200k_base — the modern BPE; a stable approximation across providers.
+    /// o200k_base — the modern BPE; a stable approximation across providers. Shares one
+    /// process-global BPE (built on first use), so construction is effectively free after the first.
     pub fn o200k() -> Self {
-        Self {
-            bpe: o200k_base().expect("o200k_base BPE must load"),
-        }
+        Self { bpe: o200k_bpe() }
     }
 }
 
