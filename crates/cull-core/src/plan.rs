@@ -8,7 +8,7 @@ pub enum DropReason { Superseded, IrrelevantBySlice, Duplicate, Evicted, StaleOu
 /// segment; `JsonColumnar` is a self-contained columnar encoding of a repetitive JSON array
 /// (value-lossless, reversible by `json_crush::expand`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reconstruct { Delta { base: SegmentId }, JsonColumnar }
+pub enum Reconstruct { Delta { base: SegmentId }, JsonColumnar, LogColumnar }
 
 /// Drop removes a WHOLE unit (allowed). Replace substitutes a LOSSLESS smaller representation:
 /// `rendered` (a unified diff) is what gets sent; `reconstruct` says how to recover the exact
@@ -66,6 +66,13 @@ pub fn replace_is_lossless(
                 std::str::from_utf8(rendered),
             ) {
                 (Ok(orig), Ok(rend)) => crate::json_crush::round_trips(orig, rend),
+                _ => false,
+            },
+            Reconstruct::LogColumnar => match (
+                std::str::from_utf8(&original.bytes),
+                std::str::from_utf8(rendered),
+            ) {
+                (Ok(orig), Ok(rend)) => crate::log_crush::round_trips(orig, rend),
                 _ => false,
             },
         },
