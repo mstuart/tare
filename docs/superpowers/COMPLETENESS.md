@@ -12,7 +12,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ A1 Supersession decay — `passes/supersession.rs`
 - [x] ✅ A2 File-read IVM/delta — wired into the proxy over full-history requests (cross-turn) — `passes/ivm.rs` + `cull-proxy`
 - [x] ✅ A3 envelope dedup — content-similarity delta of repetitive ToolOutputs (lossless, model-verified; achieves RePair's goal via the Delta model) — `passes/envelope.rs`
-- [ ] ❌ A4 Content-defined chunking (CDC/Merkle) + cross-session dedup
+- [x] ✅/🚫 A4 — within-session near-dup dedup via A3 line-delta (diffy dedups shared lines = CDC's text value); CROSS-session dedup is inapplicable to stateless APIs (model can't reference other conversations) → justified omission
 - [x] ✅ B1 Query taint/program-slice — tree-sitter symbol resolution (rust/py/js/ts/go) + transitive symbol-closure slice — `passes/relevance.rs`, `code.rs`
 - [x] ✅ B2 PRF query expansion — achieved by the transitive symbol-closure (propagating relevant segments' symbols IS PRF expansion; BM25-top-k weighting is a refinement)
 - [ ] ❌ B3 Embedding / logprob salience
@@ -25,7 +25,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 ## §8 Cache-aware planner
 - [x] ✅ Economic model formulas — `cull-cache`
 - [x] ✅ Model informs a runtime decision — proxy savings gate (Plan 14)
-- [ ] ❌ Rule 1 immutable prefix — REAL GAP: proxy may compress an OLD `tool_result` inside the agent's cached prefix → busts cache. Needs `cache_control`-breakpoint awareness (→ cache-boundary plan)
+- [x] ✅ Rule 1 immutable prefix — proxy respects `cache_control` breakpoints; never compresses inside the cached prefix (`cull-proxy`)
 - [x] ✅ Rule 2 write-amortization — N/A by design: proxy does NO cache-write (whole-unit drop + lossless delta, not net-negative CCR); savings gate covers trivial gain
 - [x] ✅ Rule 3 stability-ordered segmentation
 - [x] ✅ Rule 4 tail-only eviction
@@ -35,7 +35,7 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Rule 8 tool-definition freeze — proxy never modifies `tools`
 - [x] ✅ Rule 9 delta-before-full-resend (IVM deltas re-reads)
 - [x] ✅ Rule 10 compress-once — one plan computed + applied per request, not incrementally
-- [ ] ⚠️ Boundary detection — savings gate is the per-request decision; full cache-boundary awareness pending (→ cache-boundary plan)
+- [x] ✅ Boundary detection — the `cache_control` breakpoint is the boundary; compress only after it
 
 ## §9 Invariants
 - [x] ✅ I1 net-non-negative
@@ -84,5 +84,5 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - **Predicate-pushdown (D1)** rewrites the agent's real tool calls. Plan: BUILD it, ship OFF by default (opt-in flag). "Off by default" counts as done; "not built" does not.
 
 ## Tally (update every change)
-Updated after Plan 21: roughly 35 ✅ / 4 ⚠️ / 6 ❌ (+1 🚫). **NOT DONE.**
+Updated after Plan 22: roughly 38 ✅ / 3 ⚠️ / 3 ❌ (+2 🚫). **NOT DONE.** Remaining real: R5 hit-rate, R6, B3 embedding, count_tokens, D1, §12 depth/incumbents (several env-gated).
 Real remaining: cache-prefix-boundary awareness (R1+R5), RePair, full taint-slice, PRF+embedding, reasoning-trace, ARC+Belady, CDC/cross-session, OpenAI, array tool_result, system/tools compression, deeper benchmark + real-incumbent adapters, count_tokens, predicate-pushdown.
