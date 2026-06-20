@@ -73,22 +73,36 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
         }
     }
 
-    // pass 2: collect tool_result string contents with rich kind + path, and their locations
+    // pass 2: collect tool_result contents (string or array-of-text) with rich kind + path, and their locations
     let mut raws: Vec<RawBlock> = Vec::new();
-    let mut locs: Vec<(usize, usize)> = Vec::new();
+    let mut locs: Vec<(usize, usize, Option<usize>)> = Vec::new();
     if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
         for (mi, m) in msgs.iter().enumerate() {
             let Some(blocks) = m.get("content").and_then(Value::as_array) else { continue; };
             for (bi, b) in blocks.iter().enumerate() {
                 if b.get("type").and_then(Value::as_str) == Some("tool_result") {
-                    if let Some(text) = b.get("content").and_then(Value::as_str) {
-                        let (class, path) = b.get("tool_use_id").and_then(Value::as_str)
-                            .and_then(|id| meta.get(id)).cloned()
-                            .unwrap_or_else(|| ("tool_result".to_string(), None));
-                        let kind = if path.is_some() { SegmentKind::FileRead }
-                                   else { SegmentKind::ToolOutput { class } };
-                        raws.push(RawBlock { role: Role::Tool, kind, text: text.to_string(), path });
-                        locs.push((mi, bi));
+                    let (class, path) = b.get("tool_use_id").and_then(Value::as_str)
+                        .and_then(|id| meta.get(id)).cloned()
+                        .unwrap_or_else(|| ("tool_result".to_string(), None));
+                    let kind = if path.is_some() { SegmentKind::FileRead }
+                               else { SegmentKind::ToolOutput { class: class.clone() } };
+                    match b.get("content") {
+                        Some(Value::String(text)) => {
+                            raws.push(RawBlock { role: Role::Tool, kind, text: text.clone(), path });
+                            locs.push((mi, bi, None));
+                        }
+                        Some(Value::Array(inner)) => {
+                            for (k, ib) in inner.iter().enumerate() {
+                                if ib.get("type").and_then(Value::as_str) == Some("text") {
+                                    if let Some(text) = ib.get("text").and_then(Value::as_str) {
+                                        raws.push(RawBlock { role: Role::Tool, kind: kind.clone(),
+                                            text: text.to_string(), path: path.clone() });
+                                        locs.push((mi, bi, Some(k)));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -111,7 +125,7 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
     debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool_result");
-    for (entry, (mi, bi)) in plan.entries.iter().zip(locs.iter()) {
+    for (entry, (mi, bi, inner)) in plan.entries.iter().zip(locs.iter()) {
         let replacement = match &entry.action {
             SegmentAction::Drop(reason) =>
                 Some(format!("[cull: tool output elided — {reason:?}]")),
@@ -119,14 +133,21 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
                 Some(format!("[cull: delta vs an earlier read]\n{}", String::from_utf8_lossy(rendered))),
             SegmentAction::Keep => None,
         };
-        if let Some(text) = replacement {
-            if let Some(content) = out
-                .get_mut("messages").and_then(Value::as_array_mut)
-                .and_then(|ms| ms.get_mut(*mi))
-                .and_then(|m| m.get_mut("content")).and_then(Value::as_array_mut)
-                .and_then(|bs| bs.get_mut(*bi))
-                .and_then(|b| b.get_mut("content"))
-            { *content = Value::String(text); }
+        let Some(text) = replacement else { continue; };
+        let base = out.get_mut("messages").and_then(Value::as_array_mut)
+            .and_then(|ms| ms.get_mut(*mi))
+            .and_then(|m| m.get_mut("content")).and_then(Value::as_array_mut)
+            .and_then(|bs| bs.get_mut(*bi));
+        let Some(block) = base else { continue; };
+        match inner {
+            None => {
+                if let Some(c) = block.get_mut("content") { *c = Value::String(text); }
+            }
+            Some(k) => {
+                if let Some(t) = block.get_mut("content").and_then(Value::as_array_mut)
+                    .and_then(|arr| arr.get_mut(*k)).and_then(|tb| tb.get_mut("text"))
+                { *t = Value::String(text); }
+            }
         }
     }
     (out, Some(report))
@@ -278,6 +299,27 @@ mod tests {
         let (_out, report) = compress_anthropic_request_reported(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 });
         assert!(report.is_some());
         assert!(report.unwrap().input_tokens > 0);
+    }
+
+    #[test]
+    fn compresses_text_inside_array_tool_result() {
+        let req = serde_json::json!({"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"g1","name":"grep","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1","content":[
+                {"type":"text","text":"kubernetes helm chart registry totally unrelated junk one two"}
+            ]}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1","content":[
+                {"type":"text","text":"jwt authentication middleware verify token"}
+            ]}]},
+            {"role":"user","content":"fix authentication jwt"}
+        ]});
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        // structure preserved: array content still an array with one block of type text
+        assert_eq!(out["messages"][1]["content"][0]["content"][0]["type"], "text");
+        let elided = out["messages"][1]["content"][0]["content"][0]["text"].as_str().unwrap();
+        let kept   = out["messages"][2]["content"][0]["content"][0]["text"].as_str().unwrap();
+        assert!(elided.contains("[cull"), "irrelevant array-content text elided: {elided}");
+        assert!(kept.contains("jwt authentication middleware"), "relevant kept: {kept}");
     }
 
     #[test]
