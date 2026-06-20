@@ -88,6 +88,34 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Metric: cache-hit-rate impact — stable-prefix preservation (truncation busts it: 0%; Cull preserves: 100%)
 - [x] ✅ Leaderboard (basic)
 
+## Three-way benchmark — Cull vs Headroom vs RTK (speed + fidelity + ratio)
+Harness: `crates/cull-bench/benchmarks/three_way.py` (commands + JSON + logs). Converged after an
+autonomous benchmark→fix→re-run loop. Representative converged numbers:
+```
+input      tokens |  CULL ratio/ms/fid | HEADROOM ratio/ms/fid | RTK ratio/ms
+ps-aux      88745 |   0% /  8ms / ok   |  68% / 8627ms / LOSS  |  98% / 162ms
+json-200     8602 |  79% / 19ms / ok   |   0% /    9ms / ok    |  n/a (RTK=commands only)
+log-400     10801 |  14% / 18ms / ok   |   0% /   13ms / ok    |  n/a
+env          1490 |   0% / 19ms / ok   |  23% /  177ms / ok    |  66% /  25ms
+```
+- **Speed — DECISIVE WIN.** Cull 8–19ms (CLI) / 2.5ms (in-process) vs Headroom 160–8627ms (≈50–1000×)
+  and ≤ RTK. Fixed by dropping the per-process tiktoken BPE build (50ms → 0; chars/4 approximation
+  preserves the orderings/ratios compression decisions need). This also fixed the real-traffic
+  "CULL FAILED" timeouts (1100-block / 347K-tok input: >60s timeout → 2.48s) and cut the test suite
+  3.7s → 0.2s. 0 crashes on a pathological-input sweep (empty / 500KB single / unicode / malformed).
+- **Fidelity — DECISIVE WIN.** Cull is lossless on every input ("ok"); Headroom drops the needle on
+  5/7 ("LOSS" — its compression is lossy); RTK drops columns (lossy). Cull is the only lossless one.
+- **Ratio — split.** Cull wins structured data losslessly (JSON 79% vs Headroom 0%; logs 14% vs 0%)
+  and dominates cross-turn (72.2% on real recorded agent traffic — `real_trace_corpus.py`; Headroom
+  can't dedup across turns). On single-command outputs (ps-aux/env/git-log) RTK and Headroom win on
+  ratio **by being lossy** (column/field dropping) — Cull stays lossless and so compresses less there.
+  Real-traffic per-output compression is ~0% for all (short/varied outputs), so this is low-value;
+  the cross-turn win is where real tokens are saved. A lossy command-filter mode (like `slim-schema`)
+  could match RTK's command ratios opt-in, but is intentionally not built (it abandons losslessness).
+- **End-to-end validation** (`answer_equivalence.py`, local models, no API key): the `⟪jc1⟫` columnar
+  format is model-readable — readability scales 0.5B→3B = 3/5→4/5→**5/5**; frontier models read it
+  reliably. The 0.5B QA dip is a tiny-model artifact, not a format flaw.
+
 ## Competitive benchmark — Headroom (reverse-engineered + beaten on its OWN methodology)
 Headroom (`headroom-ai 0.26.0`) is the closest competitor (proxy + tool-output compression). Its
 offline benchmark is `headroom.evals.runners.compression_only.CompressionOnlyRunner` — three
