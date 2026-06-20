@@ -115,6 +115,8 @@ pub fn stability_order(segments: &[Segment]) -> Vec<SegmentId> {
 
 /// Enforce plan invariants (spec §9): I3 frozen=Keep; I4/I5 a Replace must losslessly reconstruct
 /// the original; I1 a Replace must strictly reduce tokens. Any violation reverts that entry to Keep.
+/// After the per-entry loop, a fixpoint pass enforces base-protection: a Delta whose base is not
+/// Keep in the final plan is unreconstructable and reverts to Keep.
 fn enforce_invariants(actions: &mut [SegmentAction], segments: &[Segment]) {
     let by_id: std::collections::HashMap<SegmentId, &Segment> =
         segments.iter().map(|s| (s.id, s)).collect();
@@ -128,6 +130,19 @@ fn enforce_invariants(actions: &mut [SegmentAction], segments: &[Segment]) {
             let lossless = crate::plan::replace_is_lossless(s, a, &by_id);
             if !reduces || !lossless { *a = SegmentAction::Keep; }
         }
+    }
+    // Base protection: a Delta's base must be Keep in the final plan, else it's unreconstructable.
+    loop {
+        let kept: std::collections::HashSet<SegmentId> = segments.iter().zip(actions.iter())
+            .filter(|(_, a)| matches!(a, SegmentAction::Keep))
+            .map(|(s, _)| s.id).collect();
+        let mut changed = false;
+        for (a, _s) in actions.iter_mut().zip(segments.iter()) {
+            if let SegmentAction::Replace { reconstruct: crate::plan::Reconstruct::Delta { base }, .. } = a {
+                if !kept.contains(base) { *a = SegmentAction::Keep; changed = true; }
+            }
+        }
+        if !changed { break; }
     }
 }
 
@@ -324,5 +339,31 @@ mod tests {
         let segs = vec![kb(0,0,MutationClass::Fast,100,"a"), kb(1,1,MutationClass::Fast,100,"b")];
         let plan = Planner::new(vec![]).plan_with_budget(&segs, &SessionState::default(), &task, Some(100));
         assert!(crate::plan::net_tokens(&plan, &segs) <= 100);
+    }
+
+    // pass: drop seg0 AND delta seg1 against seg0 — seg1's base is gone, so it must revert to Keep.
+    struct DropBaseAndDelta;
+    impl Pass for DropBaseAndDelta {
+        fn name(&self) -> &'static str { "drop-base-and-delta" }
+        fn propose(&self, ctx: &PlanCtx) -> Vec<PlanEntry> {
+            let s0 = &ctx.segments[0]; let s1 = &ctx.segments[1];
+            let patch = diffy::create_patch(
+                std::str::from_utf8(&s0.bytes).unwrap(), std::str::from_utf8(&s1.bytes).unwrap()).to_string();
+            vec![
+                PlanEntry { id: s0.id, action: SegmentAction::Drop(DropReason::Evicted) },
+                PlanEntry { id: s1.id, action: SegmentAction::Replace {
+                    rendered: patch.into_bytes(), token_count: 1,
+                    reconstruct: Reconstruct::Delta { base: s0.id }, reason: DropReason::Duplicate } },
+            ]
+        }
+    }
+
+    #[test]
+    fn delta_against_dropped_base_reverts_to_keep() {
+        let mut a = seg(0, MutationClass::Fast); a.bytes = b"alpha\nbeta\ngamma\n".to_vec();
+        let mut b = seg(1, MutationClass::Fast); b.bytes = b"alpha\nBETA\ngamma\n".to_vec();
+        let plan = Planner::new(vec![Box::new(DropBaseAndDelta)]).plan(&[a.clone(), b.clone()], &SessionState::default());
+        // base seg0 dropped -> seg1's delta has no base -> reverted to Keep (reconstructable)
+        assert_eq!(plan.entries[1].action, SegmentAction::Keep);
     }
 }
