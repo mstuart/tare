@@ -35,6 +35,11 @@ impl Pass for LogCompactionPass {
         ctx.segments
             .iter()
             .filter_map(|s| {
+                // Compaction targets tool OUTPUTS; file reads are code/text (the IVM/delta path).
+                // Without this guard, uniform code like `fn a() { ... }` would be log-columnarized.
+                if matches!(s.kind, crate::segment::SegmentKind::FileRead) {
+                    return None;
+                }
                 let text = std::str::from_utf8(&s.bytes).ok()?;
                 // Skip JSON — that's JsonCompactionPass's job (and avoids double-encoding).
                 if serde_json::from_str::<serde_json::Value>(text).is_ok() {
