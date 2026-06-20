@@ -294,6 +294,8 @@ impl Compressor for ShellCompressor {
 pub struct BoardRow {
     pub name: &'static str,
     pub mean_ratio: f64,           // mean(net/input); lower = more compressed
+    pub saved_pct: f64,            // headline metric (RTK/Headroom): (1 - mean_ratio) * 100; negative = grew
+    pub avg_compress_ms: f64,      // COST: wall-clock per compress() call, same clock for every contestant
     pub downstream_fidelity: f64,  // fraction whose needle (task-relevant content) survived
     pub tool_call_fidelity: f64,   // fraction whose ALL tool_params survived byte-exact
     pub divergence_rate: f64,      // fraction where needle OR a param was lost -> wrong next action
@@ -315,9 +317,15 @@ pub fn run_benchmark_with(corpus: &[BenchItem], budget: u32, extra: Vec<Box<dyn 
     compressors.iter().map(|c| {
         let mut ratios = Vec::new();
         let (mut needle_ok, mut toolcall_ok, mut diverged, mut prefix_ok) = (0usize, 0usize, 0usize, 0usize);
+        let mut compress_time = std::time::Duration::ZERO;
         for item in corpus {
             let input: u32 = item.blocks.iter().map(|b| counter.count(&b.text) as u32).sum();
+            // COST measurement: time only the compress() call, with the same clock for every
+            // contestant (in-process for Cull; subprocess shell-out for incumbents). Token counting
+            // and scoring are outside the timer.
+            let t0 = std::time::Instant::now();
             let r = c.compress(&item.blocks, item.task, budget);
+            compress_time += t0.elapsed();
             ratios.push(if input == 0 { 1.0 } else { r.net_tokens as f64 / input as f64 });
             let needle_kept = r.text.contains(item.needle);
             let params_kept = item.tool_params.iter().all(|p| r.text.contains(p));
@@ -329,9 +337,12 @@ pub fn run_benchmark_with(corpus: &[BenchItem], budget: u32, extra: Vec<Box<dyn 
             }
         }
         let n = corpus.len().max(1) as f64;
+        let mean_ratio = ratios.iter().sum::<f64>() / n;
         BoardRow {
             name: c.name(),
-            mean_ratio: ratios.iter().sum::<f64>() / n,
+            mean_ratio,
+            saved_pct: (1.0 - mean_ratio) * 100.0,
+            avg_compress_ms: compress_time.as_secs_f64() * 1e3 / n,
             downstream_fidelity: needle_ok as f64 / n,
             tool_call_fidelity: toolcall_ok as f64 / n,
             divergence_rate: diverged as f64 / n,
@@ -340,13 +351,22 @@ pub fn run_benchmark_with(corpus: &[BenchItem], budget: u32, extra: Vec<Box<dyn 
     }).collect()
 }
 
-/// Render the leaderboard as a text table.
+/// Adaptive time formatting: µs / ms / s so sub-millisecond Cull and multi-second shell-outs both read cleanly.
+fn fmt_time(ms: f64) -> String {
+    if ms < 1.0 { format!("{:.0}µs", ms * 1000.0) }
+    else if ms < 1000.0 { format!("{:.1}ms", ms) }
+    else { format!("{:.2}s", ms / 1000.0) }
+}
+
+/// Render the leaderboard as a text table. Headline = tokens saved (the RTK/Headroom metric);
+/// time/call is the COST; then the fidelity columns that decide whether the savings are usable.
 pub fn render_board(board: &[BoardRow]) -> String {
-    let mut s = String::from("compressor        ratio  down-fid  tool-fid  diverge  cache-pfx\n");
-    s.push_str("---------------------------------------------------------------------\n");
+    let mut s = String::from("compressor        saved%  time/call  down-fid  tool-fid  diverge  cache-pfx\n");
+    s.push_str("--------------------------------------------------------------------------------\n");
     for r in board {
-        s.push_str(&format!("{:<16} {:>6.3}  {:>7.0}%  {:>7.0}%  {:>6.0}%  {:>8.0}%\n",
-            r.name, r.mean_ratio, r.downstream_fidelity * 100.0, r.tool_call_fidelity * 100.0,
+        s.push_str(&format!("{:<16} {:>6.1}  {:>9}  {:>7.0}%  {:>7.0}%  {:>6.0}%  {:>8.0}%\n",
+            r.name, r.saved_pct, fmt_time(r.avg_compress_ms),
+            r.downstream_fidelity * 100.0, r.tool_call_fidelity * 100.0,
             r.divergence_rate * 100.0, r.cache_prefix_kept * 100.0));
     }
     s
