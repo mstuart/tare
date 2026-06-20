@@ -30,7 +30,7 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
     let state = Arc::new(ProxyState {
         client: reqwest::Client::new(),
         upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts { enabled: true, recency_keep: 1 },
+        opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
     });
     let proxy_port = spawn(app(state)).await;
 
@@ -76,7 +76,7 @@ async fn proxy_response_carries_cull_report_headers() {
     let state = Arc::new(ProxyState {
         client: reqwest::Client::new(),
         upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts { enabled: true, recency_keep: 1 },
+        opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
     });
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
