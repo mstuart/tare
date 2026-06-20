@@ -16,9 +16,10 @@ use cull_tokenize::ApproxCounter;
 pub struct CompressOpts {
     pub enabled: bool,
     pub recency_keep: usize,
+    pub min_savings: u32, // skip compression unless it saves at least this many tokens
 }
 impl Default for CompressOpts {
-    fn default() -> Self { Self { enabled: true, recency_keep: 4 } }
+    fn default() -> Self { Self { enabled: true, recency_keep: 4, min_savings: 0 } }
 }
 
 /// Concatenate the text of the LAST user message (string content or text blocks) — the task signal.
@@ -103,6 +104,11 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
     let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &task);
     let (_emitted, report) = emit(&segs, &plan);
 
+    let savings = report.input_tokens.saturating_sub(report.net_tokens);
+    if savings < opts.min_savings {
+        return (req.clone(), None); // not worth compressing -> exact passthrough
+    }
+
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
     debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool_result");
     for (entry, (mi, bi)) in plan.entries.iter().zip(locs.iter()) {
@@ -174,7 +180,7 @@ mod tests {
     #[test]
     fn compresses_irrelevant_tool_result_keeps_structure() {
         let req = sample_req();
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 1 });
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 });
 
         // structure preserved: same message count, roles, block counts
         assert_eq!(out["messages"].as_array().unwrap().len(), req["messages"].as_array().unwrap().len());
@@ -205,7 +211,7 @@ mod tests {
     #[test]
     fn disabled_is_passthrough() {
         let req = sample_req();
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: false, recency_keep: 4 });
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: false, recency_keep: 4, min_savings: 0 });
         assert_eq!(out, req);
     }
 
@@ -226,7 +232,7 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"g2","content":"NEW grep run alpha beta gamma delta"}]},
             {"role":"user","content":"continue with alpha beta gamma"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0 });
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
         let older = out["messages"][1]["content"][0]["content"].as_str().unwrap();
         let newer = out["messages"][3]["content"][0]["content"].as_str().unwrap();
         assert!(older.contains("[cull"), "older same-tool output superseded: {older}");
@@ -259,7 +265,7 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"r2","content": changed}]},
             {"role":"user","content":"keep working on src/x.rs CHANGED"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0 });
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
         // first read kept verbatim; second becomes a delta marker (smaller)
         assert_eq!(out["messages"][1]["content"][0]["content"].as_str().unwrap(), base);
         let second = out["messages"][3]["content"][0]["content"].as_str().unwrap();
@@ -269,8 +275,20 @@ mod tests {
     #[test]
     fn reported_returns_a_fidelity_report() {
         let req = sample_req();
-        let (_out, report) = compress_anthropic_request_reported(&req, &CompressOpts { enabled: true, recency_keep: 1 });
+        let (_out, report) = compress_anthropic_request_reported(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 });
         assert!(report.is_some());
         assert!(report.unwrap().input_tokens > 0);
+    }
+
+    #[test]
+    fn skips_compression_when_savings_below_threshold() {
+        // one tiny tool_result — stubbing it would save ~nothing; with a high min_savings, passthrough.
+        let req = serde_json::json!({"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"g1","name":"grep","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1","content":"x"}]},
+            {"role":"user","content":"do something unrelated entirely"}
+        ]});
+        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 1000 });
+        assert_eq!(out, req, "below the savings threshold -> exact passthrough");
     }
 }
