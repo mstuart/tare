@@ -2,3 +2,10 @@
 
 # fastembed downloaded ONNX models (large, regenerated on demand)
 .fastembed_cache/
+
+# local tooling artifacts (vexp index + config)
+/.vexp/
+vexp.toml
+
+# internal build scaffolding (AI session plans / specs / ledger) — not for public consumption
+/docs/superpowers/
