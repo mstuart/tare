@@ -28,7 +28,7 @@ impl Default for CompressOpts {
 /// Per-turn compression aggression — the DYNAMIC dial the closed-loop controller turns each turn,
 /// distinct from the static [`CompressOpts`] session config. `Default` is byte-identical to the
 /// pre-controller behavior (relevance on, path-default recency, no lossy).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Aggression {
     /// Back off query-relevance pruning (verbosity-spike response): keep more context.
     pub skip_relevance: bool,
@@ -44,13 +44,9 @@ pub struct Aggression {
     pub lossy_max_field: usize,
 }
 
-impl Default for Aggression {
-    fn default() -> Self {
-        Self { skip_relevance: false, recency_keep: None, skeletonize_code: false, lossy_max_rows: 0, lossy_max_field: 0 }
-    }
-}
-
 /// The closed-loop controller: map live session signals to a per-turn [`Aggression`].
+/// `Aggression::default()` (all fields false/None/0, via derive) is the level-1 no-op dial — exactly
+/// the pre-controller behavior: relevance on, path-default recency, no skeleton, no lossy.
 ///
 /// - `spiking`: the prior turn's output spiked (compression-paradox cue) — step DOWN one level so the
 ///   model stops over-generating to compensate.
