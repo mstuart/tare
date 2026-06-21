@@ -34,6 +34,9 @@ enum Command {
         /// How many head and tail rows to always keep (schema + recency).
         #[arg(long, default_value_t = 3)]
         boundary: usize,
+        /// Optional task/query: units relevant to it are always kept (query-aware pruning).
+        #[arg(long, default_value = "")]
+        task: String,
     },
 }
 
@@ -74,13 +77,14 @@ fn main() {
             let out = cull_core::schema_slim::slim(&input).unwrap_or(input);
             println!("{out}");
         }
-        Command::CompactLossy { boundary } => {
+        Command::CompactLossy { boundary, task } => {
             let mut input = String::new();
             if std::io::stdin().read_to_string(&mut input).is_err() {
                 eprintln!("error: failed to read stdin");
                 std::process::exit(1);
             }
-            let out = cull_core::lossy_compact::compact(&input, boundary).unwrap_or(input);
+            let t = if task.is_empty() { None } else { Some(task.as_str()) };
+            let out = cull_core::lossy_compact::compact(&input, boundary, t).unwrap_or(input);
             println!("{out}");
         }
     }
