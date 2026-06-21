@@ -205,6 +205,8 @@ async fn handle_generic(
                     }
                 }
                 // Output-side sensor (compression-paradox): output_tokens land in the FINAL event.
+                // (A >2 MB streaming response whose usage event straddles the 64 KB tail boundary may
+                // skip ONE sample — non-fatal: the EWMA tolerates a gap, and head covers <=2 MB bodies.)
                 let out_tok = parse_output_tokens(&tail, provider).or_else(|| parse_output_tokens(&head, provider));
                 if let (Some(id), Some(out_tok)) = (sid, out_tok) {
                     if let Ok(mut map) = state_tee.outputs.lock() {

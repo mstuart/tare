@@ -40,11 +40,12 @@ impl HitRateMonitor {
 /// jumps well above baseline — the cue for the controller to BACK OFF compression instead of pushing
 /// it harder. It observes this turn and exposes state the next turn acts on (same cadence as
 /// [`HitRateMonitor`]). The spike→action policy lives in the controller, not here; this is the sensor.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct OutputMonitor {
-    baseline: Option<f64>, // EWMA of per-turn output tokens
-    spiking: bool,         // did the most recent observed turn spike vs baseline?
+    baseline: Option<f64>,   // EWMA of per-turn output tokens
+    spiking: bool,           // is the session currently in verbosity back-off?
     turns: u32,
+    consecutive_spikes: u32, // run length of above-threshold turns (bounds the back-off)
 }
 
 /// EWMA smoothing for the output baseline (higher = more reactive to recent turns).
@@ -53,31 +54,34 @@ const EWMA_ALPHA: f64 = 0.3;
 const SPIKE_FACTOR: f64 = 1.75;
 /// Observations needed before a baseline is trustworthy enough to flag a spike.
 const WARMUP_TURNS: u32 = 2;
-
-impl Default for OutputMonitor {
-    fn default() -> Self { Self { baseline: None, spiking: false, turns: 0 } }
-}
+/// After this many consecutive high turns, treat the level as a genuine SHIFT (a legitimately longer
+/// task), re-baseline, and release back-off — so we never compress-conservatively forever. Transient
+/// verbosity-compensation from over-compression clears within a few turns once we back off.
+const SPIKE_ADAPT_LIMIT: u32 = 5;
 
 impl OutputMonitor {
     pub fn new() -> Self { Self::default() }
 
-    /// Record one turn's output token count. Returns `true` if it is a verbosity spike vs the
-    /// session baseline (after warmup). A spike turn is NOT folded into the baseline — otherwise a
-    /// model stuck in verbosity-compensation would inflate the baseline and silence the signal after
-    /// the first spike. Baseline updates only on non-spike turns, so SUSTAINED verbosity keeps the
-    /// back-off engaged until output actually returns to normal.
+    /// Record one turn's output token count. Returns `true` while the session is in verbosity
+    /// back-off. A spike turn is NOT folded into the baseline (else a model stuck in verbosity-
+    /// compensation would inflate the baseline and silence the signal after one turn) — UNLESS the
+    /// high level persists for `SPIKE_ADAPT_LIMIT` turns, at which point it's a genuine shift, so we
+    /// re-baseline and release back-off rather than stay conservative forever.
     pub fn observe(&mut self, output_tokens: u64) -> bool {
         let o = output_tokens as f64;
-        let spike = matches!(self.baseline, Some(b) if self.turns >= WARMUP_TURNS && o > b * SPIKE_FACTOR);
-        if !spike {
+        let over = matches!(self.baseline, Some(b) if self.turns >= WARMUP_TURNS && o > b * SPIKE_FACTOR);
+        self.consecutive_spikes = if over { self.consecutive_spikes + 1 } else { 0 };
+        let adapting_shift = over && self.consecutive_spikes >= SPIKE_ADAPT_LIMIT;
+        if !over || adapting_shift {
             self.baseline = Some(match self.baseline {
                 Some(b) => EWMA_ALPHA * o + (1.0 - EWMA_ALPHA) * b,
                 None => o,
             });
         }
         self.turns += 1;
-        self.spiking = spike;
-        spike
+        // Back off while a spike is active, but not once we've adapted to a sustained new level.
+        self.spiking = over && !adapting_shift;
+        self.spiking
     }
 
     /// Whether the most recently observed turn was a verbosity spike (read at the next turn).
@@ -167,5 +171,21 @@ mod tests {
         assert!(m.observe(400), "and keeps spiking");
         // once output returns to normal, the baseline resumes and the spike clears
         assert!(!m.observe(100));
+    }
+
+    #[test]
+    fn output_monitor_adapts_after_sustained_shift_releases_backoff() {
+        // regression guard for the never-adapt-up bug: a genuine, sustained higher output level must
+        // NOT keep the session in back-off forever — after SPIKE_ADAPT_LIMIT turns it re-baselines.
+        let mut m = OutputMonitor::new();
+        m.observe(100);
+        m.observe(100); // baseline ~100
+        let mut active = 0;
+        for _ in 0..10 {
+            if m.observe(400) { active += 1; }
+        }
+        assert!(active >= 1, "transient verbosity backs off at least once");
+        assert!(active <= SPIKE_ADAPT_LIMIT, "back-off is bounded, not forever (got {active})");
+        assert!(!m.spiking(), "after a sustained shift the baseline adapts and back-off releases");
     }
 }
