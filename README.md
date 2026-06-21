@@ -117,9 +117,9 @@ reproducible source of those claims.
 Honest list of what stands between this and production:
 
 - **Never run against a live model API** — verified only against mock upstreams in tests.
-- **No CI** and **no published release** (`version = 0.0.0`, placeholder repo URL).
-- **78 `unwrap()`/`expect()`/`panic!` in non-test code** — the network-facing panic surface is
-  unaudited; a proxy should degrade, not crash, on hostile input.
+- **No published release** — v0.1.0 is tagged but not yet pushed to crates.io.
+- **3 startup `.expect()` calls in `cull-proxy/main.rs`** — these fail-fast on bind/listen failure
+  (appropriate), but the proxy has not been stress-tested against hostile input in a live environment.
 - The context-fill signal counts the serialized request (incl. JSON envelope), so it slightly
   over-estimates true fill (conservative — errs toward compressing sooner).
 - A `>2 MB` *streaming* response whose final usage event straddles the 64 KB tail buffer may skip one
