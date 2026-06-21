@@ -4,7 +4,7 @@
 
 Please report security issues **privately** — do not open a public issue.
 
-- Preferred: open a [GitHub private security advisory](https://github.com/markstuart/cull/security/advisories/new).
+- Preferred: open a [GitHub private security advisory](https://github.com/mstuart/cull/security/advisories/new).
 - Or email: **mstuart@users.noreply.github.com**
 
 Please include reproduction steps and the affected version/commit. You can expect an acknowledgement
