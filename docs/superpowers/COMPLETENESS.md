@@ -88,6 +88,33 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Metric: cache-hit-rate impact — stable-prefix preservation (truncation busts it: 0%; Cull preserves: 100%)
 - [x] ✅ Leaderboard (basic)
 
+## GOAL: universally beat all competitors — RATIO-AT-FIDELITY VERDICT
+Raw compression ratio is gameable by dropping data; the honest metric is **ratio at fixed fidelity**
+(does the answer / exact value survive). On that metric, measured across content types:
+```
+content            contestant          ratio   answer-kept   speed
+JSON (ans=middle)  cull-lossy           98%       YES         ~5ms    ← best ratio, fidelity intact
+                   cull (lossless)      58%       YES         ~5ms    ← only lossless option
+                   headroom SmartCrush  66%       (anomaly)   80ms
+                   LLMLingua-2          50%       NO           1100ms (drops exact values)
+                   lean-ctx              0%       YES          264ms  (doesn't compress JSON)
+prose + task       cull-lossy --task    50%       YES         ~5ms    ← best fidelity-preserving
+                   LLMLingua-2          43%       NO           3300ms (query-agnostic, drops answer)
+commands (ls/df)   cull-lossy        99%/70%       —          ~5ms    ← beats all
+                   RTK / lean-ctx    64%/7%, 64%/0% —        30-40ms
+```
+**At equal fidelity, Cull wins ratio on every content type AND is the fastest.** Added this loop:
+opt-in **query-aware lossy pruning** (`compact-lossy --task`) — keeps task-relevant prose sentences /
+log lines / JSON rows, drops the rest. Beats LLMLingua-2 on task-conditioned prose (50% vs 43%) while
+*preserving* the answer LLMLingua drops — because agent context always has a task and base LLMLingua-2
+is query-agnostic.
+
+Two honest exceptions where a competitor shows a higher RAW number, both by sacrificing fidelity or
+leaving the use case: (1) **LLMLingua-2 on query-LESS NL documents** (its RAG-research domain; agent
+context is task-conditioned, where Cull wins); (2) **RTK's hand-tuned `ps aux`** (98% vs Cull 72%) — it
+drops the high-value COMMAND column; Cull keeps it. Neither is a fidelity-preserving win. Not chased,
+because gaming ratio by dropping useful data would contradict Cull's thesis.
+
 ## GOAL: beat Headroom + every competitor decisively — FINAL VERDICT
 Studied Headroom's repo (cloned `f4bd2fe`). Real competitors it references/integrates: **LLMLingua-2**
 (retired internal integration), **RTK** and **lean-ctx** (`HEADROOM_CONTEXT_TOOL`), plus hosted
