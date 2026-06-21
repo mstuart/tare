@@ -1,7 +1,8 @@
 [package]
 name = "cull-bench"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
+publish = false
 
 [[bin]]
 name = "cull-bench"
