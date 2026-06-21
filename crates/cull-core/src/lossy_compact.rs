@@ -36,10 +36,40 @@ fn modal_keys(arr: &[Value]) -> Vec<String> {
     counts.into_iter().max_by_key(|(_, c)| *c).map(|(k, _)| k).unwrap_or_default()
 }
 
-/// Aggressively (lossily) compact a top-level JSON array of objects in `text`. Returns `None` if it
-/// isn't such an array large enough to be worth it, or the result would not be smaller.
+/// Aggressively (lossily) compact `text`: a JSON array of objects, or — failing that — repetitive
+/// line-based content (logs, tabular command output). Returns `None` if not worth it / not smaller.
 pub fn compact(text: &str, boundary: usize) -> Option<String> {
-    let value: Value = serde_json::from_str(text).ok()?;
+    match serde_json::from_str::<Value>(text) {
+        Ok(v) if v.is_array() => compact_json_array(&v, boundary).or_else(|| compact_lines(text, boundary)),
+        _ => compact_lines(text, boundary),
+    }
+}
+
+/// Line-based lossy compaction: keep the first/last `boundary` lines and any line containing an
+/// alert keyword; drop the uniform bulk with an explicit marker. Byte-structure-agnostic, so it
+/// handles logs and tabular command output (`ps aux`, `ls -la`, …).
+fn compact_lines(text: &str, boundary: usize) -> Option<String> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let n = lines.len();
+    if n <= 2 * boundary + 4 {
+        return None;
+    }
+    let mut keep = vec![false; n];
+    for k in keep.iter_mut().take(boundary.min(n)) { *k = true; }
+    for k in keep.iter_mut().skip(n.saturating_sub(boundary)) { *k = true; }
+    for (i, line) in lines.iter().enumerate() {
+        let l = line.to_ascii_lowercase();
+        if ALERTS.iter().any(|a| l.contains(a)) { keep[i] = true; }
+    }
+    let kept: Vec<&str> = lines.iter().zip(&keep).filter(|(_, k)| **k).map(|(l, _)| *l).collect();
+    let dropped = n - kept.len();
+    if dropped == 0 { return None; }
+    let out = format!("{}\n[cull-lossy: {dropped} of {n} uniform lines elided; kept boundary+alerts]",
+        kept.join("\n"));
+    if out.len() < text.len() { Some(out) } else { None }
+}
+
+fn compact_json_array(value: &Value, boundary: usize) -> Option<String> {
     let arr = value.as_array()?;
     let n = arr.len();
     if n <= 2 * boundary + 2 || !arr.iter().all(Value::is_object) {
@@ -76,7 +106,8 @@ pub fn compact(text: &str, boundary: usize) -> Option<String> {
     }
     out.push_str(&format!("\n[cull-lossy: {dropped} of {n} uniform rows elided; kept boundary+anomalies]"));
 
-    if out.len() < text.len() {
+    // worth it only if smaller than the compact original
+    if out.len() < value.to_string().len() {
         Some(out)
     } else {
         None
