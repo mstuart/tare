@@ -7,7 +7,7 @@ use serde_json::Value;
 use cull_core::segmenter::{segment, RawBlock};
 use cull_core::segment::{Role, SegmentKind};
 use cull_core::planner::Planner;
-use cull_core::passes::{structural_passes, query_passes, RelevancePass, ReasoningTracePass};
+use cull_core::passes::{structural_passes, RelevancePass, ReasoningTracePass};
 use cull_core::emit::emit;
 pub use cull_core::emit::FidelityReport;
 use cull_core::session::SessionState;
@@ -23,6 +23,60 @@ pub struct CompressOpts {
 }
 impl Default for CompressOpts {
     fn default() -> Self { Self { enabled: true, recency_keep: 4, min_savings: 0 } }
+}
+
+/// Per-turn compression aggression — the DYNAMIC dial the closed-loop controller turns each turn,
+/// distinct from the static [`CompressOpts`] session config. `Default` is byte-identical to the
+/// pre-controller behavior (relevance on, path-default recency, no lossy).
+#[derive(Clone, Copy, Debug)]
+pub struct Aggression {
+    /// Back off query-relevance pruning (verbosity-spike response): keep more context.
+    pub skip_relevance: bool,
+    /// Relevance recency-window override. `None` = each path's default (Anthropic 6 / OpenAI opts);
+    /// `Some(n)` tightens it (smaller = prune more) as the context window fills.
+    pub recency_keep: Option<usize>,
+    /// Opt-in lossy compaction of kept tool OUTPUTS at the top tier (0 = lossless). Maps to the
+    /// `lossy_compact` row-cap / field-truncate levers; applied only when the window is near full.
+    pub lossy_max_rows: usize,
+    pub lossy_max_field: usize,
+}
+
+impl Default for Aggression {
+    fn default() -> Self {
+        Self { skip_relevance: false, recency_keep: None, lossy_max_rows: 0, lossy_max_field: 0 }
+    }
+}
+
+/// The closed-loop controller: map live session signals to a per-turn [`Aggression`].
+///
+/// - `spiking`: the prior turn's output spiked (compression-paradox cue) — step DOWN one level so the
+///   model stops over-generating to compensate.
+/// - `fill`: input-tokens / context-window ratio — as the window saturates, step UP (compress more)
+///   to fight context rot. (The cache-floor HALT is handled upstream as full passthrough.)
+///
+/// Levels: 0 = back off (skip relevance) · 1 = default lossless · 2 = tighten recency ·
+/// 3 = tighten recency + lossy suffix compaction. Fill sets the base level; a spike subtracts one
+/// (gentler). Level 1 with no signals equals the pre-controller default exactly.
+pub fn controller(spiking: bool, fill: f64) -> Aggression {
+    let mut level: u8 = if fill >= 0.8 { 3 } else if fill >= 0.5 { 2 } else { 1 };
+    if spiking { level = level.saturating_sub(1); }
+    match level {
+        0 => Aggression { skip_relevance: true,  recency_keep: None,    lossy_max_rows: 0,  lossy_max_field: 0 },
+        1 => Aggression { skip_relevance: false, recency_keep: None,    lossy_max_rows: 0,  lossy_max_field: 0 },
+        2 => Aggression { skip_relevance: false, recency_keep: Some(2), lossy_max_rows: 0,  lossy_max_field: 0 },
+        _ => Aggression { skip_relevance: false, recency_keep: Some(2), lossy_max_rows: 40, lossy_max_field: 200 },
+    }
+}
+
+/// Top-tier lossy compaction of a KEPT tool output (not code reads) when the controller enables it.
+/// Returns a replacement only when it actually shrinks the content (query-aware via `task`).
+fn lossy_keep(raw: &RawBlock, aggr: &Aggression, task: Option<&str>) -> Option<String> {
+    if (aggr.lossy_max_rows == 0 && aggr.lossy_max_field == 0)
+        || !matches!(raw.kind, SegmentKind::ToolOutput { .. }) {
+        return None; // lossless tier, or a code read (left to structural/IVM passes)
+    }
+    cull_core::lossy_compact::compact_opts(&raw.text, 3, task, aggr.lossy_max_field, aggr.lossy_max_rows)
+        .map(|c| format!("[cull: lossy-compacted]\n{c}"))
 }
 
 /// Concatenate the text of the LAST user message (string content or text blocks) — the task signal.
@@ -48,12 +102,12 @@ pub fn last_user_text(req: &Value) -> String {
 /// variant and discards the report. Preserves all structure (blocks, pairing, system, tools,
 /// model, order). `tool_result`s with non-string content are left untouched (v1).
 pub fn compress_anthropic_request(req: &Value, opts: &CompressOpts) -> Value {
-    compress_anthropic_request_reported(req, opts).0
+    compress_anthropic_request_reported(req, opts, Aggression::default()).0
 }
 
 /// Core variant returning `(compressed_request, Option<FidelityReport>)`. The report is `None`
 /// when compression is disabled or the request has no `tool_result` string content.
-pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> (Value, Option<FidelityReport>) {
+pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts, aggr: Aggression) -> (Value, Option<FidelityReport>) {
     if !opts.enabled { return (req.clone(), None); }
     let mut out = req.clone();
 
@@ -133,8 +187,14 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
     let counter = ApproxCounter::o200k();
     let segs = segment(&raws, &counter);
     let mut passes = structural_passes(); // supersession + IVM + dedup
-    passes.extend(query_passes());        // relevance
-    let task = TaskSignal::from_text(&last_user_text(req));
+    // Query-relevance pruning — the controller backs it off on a verbosity spike and tightens its
+    // recency window as the context fills. Default (skip=false, recency None→6) is byte-unchanged.
+    if !aggr.skip_relevance {
+        passes.push(Box::new(RelevancePass { recency_keep: aggr.recency_keep.unwrap_or(6) }));
+    }
+    passes.push(Box::new(ReasoningTracePass::default()));
+    let task_text = last_user_text(req);
+    let task = TaskSignal::from_text(&task_text);
     let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &task);
     let (_emitted, report) = emit(&segs, &plan);
 
@@ -145,13 +205,14 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
     debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool_result");
-    for (entry, (mi, bi, inner)) in plan.entries.iter().zip(locs.iter()) {
+    let lossy_task = if task_text.is_empty() { None } else { Some(task_text.as_str()) };
+    for (i, (entry, (mi, bi, inner))) in plan.entries.iter().zip(locs.iter()).enumerate() {
         let replacement = match &entry.action {
             SegmentAction::Drop(reason) =>
                 Some(format!("[cull: tool output elided — {reason:?}]")),
             SegmentAction::Replace { rendered, .. } =>
                 Some(format!("[cull: delta vs an earlier read]\n{}", String::from_utf8_lossy(rendered))),
-            SegmentAction::Keep => None,
+            SegmentAction::Keep => lossy_keep(&raws[i], &aggr, lossy_task),
         };
         let Some(text) = replacement else { continue; };
         let base = out.get_mut("messages").and_then(Value::as_array_mut)
@@ -179,12 +240,12 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts) -> 
 /// reported variant and discards the report. Preserves all structure (roles, order, `tool_calls`,
 /// `system`, `tools`, model). Only `role:"tool"` content strings change.
 pub fn compress_openai_request(req: &Value, opts: &CompressOpts) -> Value {
-    compress_openai_request_reported(req, opts).0
+    compress_openai_request_reported(req, opts, Aggression::default()).0
 }
 
 /// Core variant returning `(compressed_request, Option<FidelityReport>)`. The report is `None`
 /// when compression is disabled or the request has no `role:"tool"` string content.
-pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts) -> (Value, Option<FidelityReport>) {
+pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts, aggr: Aggression) -> (Value, Option<FidelityReport>) {
     if !opts.enabled { return (req.clone(), None); }
     let mut out = req.clone();
 
@@ -234,7 +295,11 @@ pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts) -> (Va
     let counter = ApproxCounter::o200k();
     let segs = segment(&raws, &counter);
     let mut passes = structural_passes(); // supersession + IVM + dedup
-    passes.push(Box::new(RelevancePass { recency_keep: opts.recency_keep })); // relevance
+    // relevance pruning — controller backs off on a verbosity spike and tightens recency as the
+    // window fills (override falls back to the static opts.recency_keep)
+    if !aggr.skip_relevance {
+        passes.push(Box::new(RelevancePass { recency_keep: aggr.recency_keep.unwrap_or(opts.recency_keep) }));
+    }
     passes.push(Box::new(ReasoningTracePass::default()));
     let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &TaskSignal::from_text(&task));
     let (_e, report) = emit(&segs, &plan);
@@ -244,12 +309,13 @@ pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts) -> (Va
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
     debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool message");
-    for (entry, mi) in plan.entries.iter().zip(locs.iter()) {
+    let lossy_task = if task.is_empty() { None } else { Some(task.as_str()) };
+    for (i, (entry, mi)) in plan.entries.iter().zip(locs.iter()).enumerate() {
         let replacement = match &entry.action {
             SegmentAction::Drop(reason) => Some(format!("[cull: tool output elided — {reason:?}]")),
             SegmentAction::Replace { rendered, .. } =>
                 Some(format!("[cull: delta vs an earlier read]\n{}", String::from_utf8_lossy(rendered))),
-            SegmentAction::Keep => None,
+            SegmentAction::Keep => lossy_keep(&raws[i], &aggr, lossy_task),
         };
         if let Some(text) = replacement {
             if let Some(c) = out.get_mut("messages").and_then(Value::as_array_mut)
@@ -403,9 +469,75 @@ mod tests {
     #[test]
     fn reported_returns_a_fidelity_report() {
         let req = sample_req();
-        let (_out, report) = compress_anthropic_request_reported(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 });
+        let (_out, report) = compress_anthropic_request_reported(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 }, Aggression::default());
         assert!(report.is_some());
         assert!(report.unwrap().input_tokens > 0);
+    }
+
+    #[test]
+    fn skip_relevance_backs_off_query_pruning() {
+        // OpenAI path honors opts.recency_keep, so recency_keep:0 isolates the relevance lever with
+        // two messages: an irrelevant grep output + a jwt-relevant anchor under a jwt task.
+        let req = json!({"model":"gpt-x","messages":[
+            {"role":"assistant","content":null,"tool_calls":[
+                {"id":"a","type":"function","function":{"name":"grep","arguments":"{}"}}]},
+            {"role":"tool","tool_call_id":"a",
+                "content":"kubernetes helm registry totally unrelated kafka broker partitions offsets"},
+            {"role":"assistant","content":null,"tool_calls":[
+                {"id":"b","type":"function","function":{"name":"read","arguments":"{\"path\":\"x.rs\"}"}}]},
+            {"role":"tool","tool_call_id":"b",
+                "content":"jwt authentication middleware verifies the token signature"},
+            {"role":"user","content":"work on authentication jwt token verification"}
+        ]});
+        let opts = CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 };
+        // relevance ON (normal): the irrelevant grep tool message is pruned
+        let pruned = compress_openai_request_reported(&req, &opts, Aggression::default());
+        assert!(pruned.0["messages"][1]["content"].as_str().unwrap().contains("[cull"),
+            "relevance ON prunes the irrelevant output");
+        // controller back-off (skip_relevance = verbosity-spike response): the SAME output is kept
+        let backoff = Aggression { skip_relevance: true, ..Aggression::default() };
+        let kept = compress_openai_request_reported(&req, &opts, backoff);
+        assert!(kept.0["messages"][1]["content"].as_str().unwrap().contains("kubernetes"),
+            "controller back-off keeps the output — no relevance pruning");
+    }
+
+    #[test]
+    fn controller_maps_signals_to_aggression_levels() {
+        // low fill, no spike = pre-controller default (relevance on, no recency override, no lossy)
+        let d = controller(false, 0.1);
+        assert!(!d.skip_relevance && d.recency_keep.is_none() && d.lossy_max_rows == 0 && d.lossy_max_field == 0);
+        // verbosity spike at low fill = back off (skip relevance)
+        assert!(controller(true, 0.1).skip_relevance);
+        // window filling = tighten recency, still lossless
+        let mid = controller(false, 0.6);
+        assert_eq!(mid.recency_keep, Some(2));
+        assert!(mid.lossy_max_rows == 0 && !mid.skip_relevance);
+        // window near full = tighten recency + engage lossy tier
+        let hi = controller(false, 0.9);
+        assert!(hi.lossy_max_rows > 0 && hi.recency_keep == Some(2));
+        // a spike steps DOWN one level even when full: drops the lossy tier, keeps recency tighten
+        let hi_spike = controller(true, 0.9);
+        assert!(hi_spike.lossy_max_rows == 0 && hi_spike.recency_keep == Some(2));
+    }
+
+    #[test]
+    fn top_tier_lossy_compacts_large_kept_tool_output() {
+        // Long prose tool output: structural passes (JSON/log columnar) don't shrink it, so it stays
+        // KEPT (recency-protected) — the top aggression tier telegraphic-compacts it as a last resort.
+        let big = "the system processed the request and then it returned a response to the user but \
+                   the result was not exactly what we had expected because of a configuration issue \
+                   that had been present for quite a while in the deployment pipeline and nobody on \
+                   the team had actually noticed it until the incident review happened this morning";
+        let req = json!({"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"a","name":"shell","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content": big}]},
+            {"role":"user","content":"continue working"}
+        ]});
+        let aggr = Aggression { skip_relevance: false, recency_keep: None, lossy_max_rows: 20, lossy_max_field: 0 };
+        let (out, _r) = compress_anthropic_request_reported(&req, &CompressOpts::default(), aggr);
+        let content = out["messages"][1]["content"][0]["content"].as_str().unwrap();
+        assert!(content.contains("[cull: lossy-compacted]"), "kept output lossy-compacted: {content:.80}");
+        assert!(content.len() < big.len(), "lossy output is smaller than the original");
     }
 
     #[test]

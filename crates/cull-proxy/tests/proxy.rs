@@ -32,6 +32,7 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
         monitors: Default::default(),
+        outputs: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
 
@@ -79,6 +80,7 @@ async fn openai_proxy_compresses_then_forwards_and_returns_upstream_response() {
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 },
         monitors: Default::default(),
+        outputs: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -128,6 +130,7 @@ async fn proxy_response_carries_cull_report_headers() {
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
         monitors: Default::default(),
+        outputs: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -176,6 +179,7 @@ async fn halts_compression_after_three_low_hit_rate_turns() {
         upstream: format!("http://127.0.0.1:{up_port}"),
         opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
         monitors: Default::default(),
+        outputs: Default::default(),
     });
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
