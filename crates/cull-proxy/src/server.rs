@@ -326,7 +326,16 @@ async fn handle_messages(State(state): State<Arc<ProxyState>>, req: Request) -> 
     let (parts, body) = req.into_parts();
     let body_bytes: Bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response(),
+        // Distinguish "too large" (hit MAX_BODY_BYTES) from a genuine read error (e.g. client
+        // disconnect) so the caller gets a correct status, not a misleading 413.
+        Err(e) => {
+            let (code, msg) = if e.to_string().contains("length limit") {
+                (StatusCode::PAYLOAD_TOO_LARGE, "request body too large")
+            } else {
+                (StatusCode::BAD_REQUEST, "failed to read request body")
+            };
+            return (code, msg).into_response();
+        }
     };
     let provider = serde_json::from_slice::<serde_json::Value>(&body_bytes)
         .map(|v| detect_anthropic_provider(&v))
@@ -346,7 +355,16 @@ async fn handle_chat(State(state): State<Arc<ProxyState>>, req: Request) -> Resp
     let (parts, body) = req.into_parts();
     let body_bytes: Bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response(),
+        // Distinguish "too large" (hit MAX_BODY_BYTES) from a genuine read error (e.g. client
+        // disconnect) so the caller gets a correct status, not a misleading 413.
+        Err(e) => {
+            let (code, msg) = if e.to_string().contains("length limit") {
+                (StatusCode::PAYLOAD_TOO_LARGE, "request body too large")
+            } else {
+                (StatusCode::BAD_REQUEST, "failed to read request body")
+            };
+            return (code, msg).into_response();
+        }
     };
     handle_generic(
         state,

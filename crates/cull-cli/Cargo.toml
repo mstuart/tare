@@ -21,8 +21,8 @@ name = "cull_cli"
 path = "src/lib.rs"
 
 [dependencies]
-cull-core = { path = "../cull-core" }
-cull-tokenize = { path = "../cull-tokenize" }
+cull-core = { path = "../cull-core", version = "0.1.0" }
+cull-tokenize = { path = "../cull-tokenize", version = "0.1.0" }
 serde = { workspace = true }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
