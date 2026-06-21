@@ -26,6 +26,7 @@ pub mod embed;
 pub mod embed_neural;
 pub mod json_crush;
 pub mod log_crush;
+pub mod lossy_compact;
 pub mod schema_slim;
 pub mod predicate;
 pub use predicate::narrow_tool_call;

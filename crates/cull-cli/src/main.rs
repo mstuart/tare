@@ -27,6 +27,14 @@ enum Command {
     /// $comment, examples) from tool/function definitions read on stdin. Preserves property names,
     /// types, required, and descriptions. Separate from the lossless `compress` pipeline by design.
     SlimSchema,
+    /// Opt-in LOSSY aggressive compaction of a large JSON array (read from stdin): keep the first
+    /// and last `boundary` rows + all anomalies (odd shapes, alert keywords), drop the uniform bulk
+    /// with an explicit marker. Matches/beats incumbents' row-dropping ratio; lossy by design.
+    CompactLossy {
+        /// How many head and tail rows to always keep (schema + recency).
+        #[arg(long, default_value_t = 3)]
+        boundary: usize,
+    },
 }
 
 fn main() {
@@ -64,6 +72,15 @@ fn main() {
             }
             // passthrough if not slimmable (not JSON / no smaller result)
             let out = cull_core::schema_slim::slim(&input).unwrap_or(input);
+            println!("{out}");
+        }
+        Command::CompactLossy { boundary } => {
+            let mut input = String::new();
+            if std::io::stdin().read_to_string(&mut input).is_err() {
+                eprintln!("error: failed to read stdin");
+                std::process::exit(1);
+            }
+            let out = cull_core::lossy_compact::compact(&input, boundary).unwrap_or(input);
             println!("{out}");
         }
     }
