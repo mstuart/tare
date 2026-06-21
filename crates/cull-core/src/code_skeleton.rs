@@ -26,6 +26,7 @@ const FUNCTION_KINDS: &[&str] = &[
     "function_expression",            // js
     "generator_function",            // js
     "generator_function_declaration", // js
+    "closure_expression",             // rust closures `|..| { .. }`
 ];
 
 /// Skip eliding bodies shorter than this (keep trivial fns whole; the marker isn't worth it).
@@ -39,6 +40,7 @@ pub fn skeletonize(text: &str, path: &str) -> Option<String> {
     let mut parser = Parser::new();
     parser.set_language(&lang).ok()?;
     let tree = parser.parse(text, None)?;
+    let had_errors = tree.root_node().has_error();
 
     // Collect OUTERMOST function-body byte ranges (don't descend into an elided body, so a nested
     // closure's body inside an elided function isn't double-counted).
@@ -74,26 +76,40 @@ pub fn skeletonize(text: &str, path: &str) -> Option<String> {
         }
         out.push_str(&text[cursor..s]);
         let body = &text[s..e];
-        let lines = body.bytes().filter(|&b| b == b'\n').count() + 1;
-        let marker = if body.starts_with('{') {
-            format!("{{ /* … {lines} lines elided */ }}")
+        let nl = body.bytes().filter(|&b| b == b'\n').count();
+        // `hidden` = lines of SOURCE the body occupied. Brace bodies keep `{`/`}` in the marker, so
+        // the hidden interior is nl-1; indentation-delimited (python) bodies are the nl+1 statements.
+        let brace = body.starts_with('{');
+        let hidden = if brace { nl.saturating_sub(1) } else { nl + 1 };
+        // `cull:` sentinel — greppable and unambiguous (not a bare `...` that reads as real code).
+        let marker = if brace {
+            format!("{{ /* cull: {hidden} lines hidden */ }}")
         } else {
-            format!("...  # … {lines} lines elided")
+            format!("# cull: {hidden} lines hidden")
         };
+        // The MIN_BODY_LINES gate skips trivial bodies; this length guard is the final safety net —
+        // never emit a marker larger than the body it replaces.
         if marker.len() < body.len() {
             out.push_str(&marker);
         } else {
-            out.push_str(body); // tiny body: keeping it verbatim is smaller than the marker
+            out.push_str(body);
         }
         cursor = e;
     }
     out.push_str(&text[cursor..]);
 
-    if out.len() < text.len() {
-        Some(out)
-    } else {
-        None
+    // Decide worth-it on the SKELETON itself (the note below is metadata, not content — it must not
+    // be able to flip a real saving into "no saving" on small files).
+    if out.len() >= text.len() {
+        return None;
     }
+    // If the file didn't fully parse, flag it: some bodies were kept for a structural reason
+    // (incomplete parse), not because they were trivial — the agent shouldn't trust them as stubs.
+    if had_errors {
+        let cmt = if path.rsplit('.').next() == Some("py") { "#" } else { "//" };
+        return Some(format!("{cmt} [cull: parse errors; skeleton may be incomplete]\n{out}"));
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -123,7 +139,8 @@ pub fn verify_token(input: AuthToken) -> Result<Claims> {
         assert!(out.contains("pub fn verify_token(input: AuthToken) -> Result<Claims>"));
         // dropped: body internals + elision marker present
         assert!(!out.contains("decode_jwt"), "body should be elided: {out}");
-        assert!(out.contains("lines elided"), "marker present: {out}");
+        // accurate hidden-line count (3 interior statements) + greppable sentinel
+        assert!(out.contains("cull: 3 lines hidden"), "accurate sentinel marker: {out}");
     }
 
     #[test]
@@ -142,7 +159,7 @@ class Service:
         assert!(out.contains("class Service:"));
         assert!(out.contains("def authenticate(self, user):"));
         assert!(!out.contains("verify_password"), "body elided: {out}");
-        assert!(out.contains("elided"));
+        assert!(out.contains("# cull:") && out.contains("lines hidden"), "python sentinel marker: {out}");
     }
 
     #[test]
@@ -189,5 +206,22 @@ func Add(a int, b int) int {
         // every fn body is < MIN_BODY_LINES -> nothing elided -> None
         let src = "fn a() -> i32 { 1 }\nfn b() -> i32 { 2 }\n";
         assert!(skeletonize(src, "x.rs").is_none());
+    }
+
+    #[test]
+    fn rust_elides_standalone_closure_body() {
+        // a module-level closure (not inside an elided fn) — its block body must be dropped too
+        let src = "static H: fn(i32) -> i32 = |x: i32| {\n    let a = x + 1;\n    let b = a * 2;\n    a + b\n};\n";
+        let out = skeletonize(src, "h.rs").expect("should skeletonize");
+        assert!(out.contains("static H"), "binding kept: {out}");
+        assert!(!out.contains("let a = x + 1"), "closure body elided: {out}");
+    }
+
+    #[test]
+    fn parse_errors_get_a_warning_note() {
+        // one valid fn (elidable) + one truncated fn (missing close brace) -> file has parse errors
+        let src = "fn ok() -> i32 {\n    let a = 1;\n    let b = 2;\n    a + b\n}\nfn broken() -> i32 {\n    let z = 1\n";
+        let out = skeletonize(src, "b.rs").expect("elides the valid fn");
+        assert!(out.contains("[cull: parse errors"), "warns about incomplete parse: {out}");
     }
 }
