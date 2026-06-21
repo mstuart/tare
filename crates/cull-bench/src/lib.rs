@@ -1,3 +1,5 @@
+//! Internal benchmark harness comparing Cull against incumbent compressors. Not published.
+
 use cull_core::emit::emit;
 use cull_core::passes::{query_passes, structural_passes};
 use cull_core::planner::Planner;

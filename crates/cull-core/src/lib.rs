@@ -1,3 +1,7 @@
+//! Cull's context-compression engine: segmentation, the pass pipeline and planner, lossless
+//! transforms (columnar JSON/log, exact/envelope dedup, IVM delta, supersession), opt-in lossy
+//! compaction, and AST code skeletonization.
+
 pub mod protected;
 pub mod segment;
 pub mod segmenter;
