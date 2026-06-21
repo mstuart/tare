@@ -1,0 +1,30 @@
+# cull
+
+> Lossless-by-default, cache-correct, closed-loop context compression for LLM coding agents. A Rust
+> workspace providing a library (`cull-core`), an HTTP proxy (`cull-proxy`) that speaks the Anthropic
+> and OpenAI APIs, and a CLI (`cull`).
+
+cull compresses an agent's context window before it reaches the model. It is **lossless by default**
+(columnar JSON/log re-encode, exact/envelope dedup, cross-turn IVM delta, supersession, schema-slim,
+query-relevance) and **lossy only on opt-in** (row-cap, field-truncate, telegraphic NL, AST code
+skeletonization). It is **cache-correct**: only the dynamic suffix after the provider's cache
+breakpoint is rewritten, so prefix caches keep hitting. It is **closed-loop**: a per-session
+controller adapts aggression from cache-hit-rate (halt), output-verbosity (the compression paradox —
+back off), and context-fill (compress harder).
+
+## Usage
+
+- Proxy: `cull-proxy` — env `CULL_UPSTREAM`, `CULL_PORT` (8787), `CULL_CONTEXT_LIMIT` (200000);
+  endpoints `/v1/messages` (Anthropic) and `/v1/chat/completions` (OpenAI).
+- CLI: `cull compress | slim-schema | compact-lossy | skeletonize`.
+
+## Docs
+
+- [README](README.md): overview, install, benchmarks, comparison, status.
+- [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), [CHANGELOG](CHANGELOG.md).
+
+## Key facts
+
+- AST code skeletonization: ~65% token reduction on real source files (code reads are the dominant sink).
+- Lossless by default; cache-prefix-boundary aware; bounded body buffering + upstream timeouts.
+- MIT licensed. MSRV 1.82. Languages for the skeletonizer: rust, python, js, ts, go.
