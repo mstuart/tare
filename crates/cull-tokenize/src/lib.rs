@@ -29,7 +29,7 @@ impl Default for ApproxCounter {
 impl TokenCounter for ApproxCounter {
     fn count(&self, text: &str) -> usize {
         // ceil(chars / 4); empty -> 0.
-        (text.chars().count() + 3) / 4
+        text.chars().count().div_ceil(4)
     }
 }
 

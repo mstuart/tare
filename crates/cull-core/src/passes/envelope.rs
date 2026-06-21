@@ -28,7 +28,7 @@ impl Pass for EnvelopeDedupPass {
                 let Ok(b_str) = std::str::from_utf8(&base.bytes) else { continue; };
                 let patch = diffy::create_patch(b_str, s_str).to_string();
                 let pt = self.counter.count(&patch) as u32;
-                if best.as_ref().map_or(true, |(_, _, bp)| pt < *bp) {
+                if best.as_ref().is_none_or(|(_, _, bp)| pt < *bp) {
                     best = Some((base.id, patch, pt));
                 }
             }
