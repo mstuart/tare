@@ -11,17 +11,25 @@ pub async fn count_tokens_exact(
     body: &Value,
 ) -> Result<u32, String> {
     let url = format!("{}/v1/messages/count_tokens", base.trim_end_matches('/'));
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("x-api-key", api_key)
         .header("anthropic-version", anthropic_version)
         .header("content-type", "application/json")
         .json(body)
-        .send().await.map_err(|e| format!("count_tokens request failed: {e}"))?;
+        .send()
+        .await
+        .map_err(|e| format!("count_tokens request failed: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("count_tokens HTTP {}", resp.status().as_u16()));
     }
-    let v: Value = resp.json().await.map_err(|e| format!("count_tokens decode failed: {e}"))?;
-    v.get("input_tokens").and_then(Value::as_u64).map(|n| n as u32)
+    let v: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("count_tokens decode failed: {e}"))?;
+    v.get("input_tokens")
+        .and_then(Value::as_u64)
+        .map(|n| n as u32)
         .ok_or_else(|| "count_tokens: missing input_tokens".to_string())
 }
 

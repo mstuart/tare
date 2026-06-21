@@ -1,19 +1,19 @@
-pub mod server;
-pub mod monitor;
 pub mod count;
+pub mod monitor;
+pub mod server;
 
-use std::collections::HashMap;
-use serde_json::Value;
-use cull_core::segmenter::{segment, RawBlock};
-use cull_core::segment::{Role, SegmentKind};
-use cull_core::planner::Planner;
-use cull_core::passes::{structural_passes, RelevancePass, ReasoningTracePass};
 use cull_core::emit::emit;
 pub use cull_core::emit::FidelityReport;
+use cull_core::passes::{structural_passes, ReasoningTracePass, RelevancePass};
+use cull_core::plan::SegmentAction;
+use cull_core::planner::Planner;
+use cull_core::segment::{Role, SegmentKind};
+use cull_core::segmenter::{segment, RawBlock};
 use cull_core::session::SessionState;
 use cull_core::task::TaskSignal;
-use cull_core::plan::SegmentAction;
 use cull_tokenize::ApproxCounter;
+use serde_json::Value;
+use std::collections::HashMap;
 
 /// Proxy compression options.
 pub struct CompressOpts {
@@ -22,7 +22,13 @@ pub struct CompressOpts {
     pub min_savings: u32, // skip compression unless it saves at least this many tokens
 }
 impl Default for CompressOpts {
-    fn default() -> Self { Self { enabled: true, recency_keep: 4, min_savings: 0 } }
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            recency_keep: 4,
+            min_savings: 0,
+        }
+    }
 }
 
 /// Per-turn compression aggression — the DYNAMIC dial the closed-loop controller turns each turn,
@@ -57,13 +63,45 @@ pub struct Aggression {
 /// 3 = tighten recency + lossy suffix compaction. Fill sets the base level; a spike subtracts one
 /// (gentler). Level 1 with no signals equals the pre-controller default exactly.
 pub fn controller(spiking: bool, fill: f64) -> Aggression {
-    let mut level: u8 = if fill >= 0.8 { 3 } else if fill >= 0.5 { 2 } else { 1 };
-    if spiking { level = level.saturating_sub(1); }
+    let mut level: u8 = if fill >= 0.8 {
+        3
+    } else if fill >= 0.5 {
+        2
+    } else {
+        1
+    };
+    if spiking {
+        level = level.saturating_sub(1);
+    }
     match level {
-        0 => Aggression { skip_relevance: true,  recency_keep: None,    skeletonize_code: false, lossy_max_rows: 0,  lossy_max_field: 0 },
-        1 => Aggression { skip_relevance: false, recency_keep: None,    skeletonize_code: false, lossy_max_rows: 0,  lossy_max_field: 0 },
-        2 => Aggression { skip_relevance: false, recency_keep: Some(2), skeletonize_code: true,  lossy_max_rows: 0,  lossy_max_field: 0 },
-        _ => Aggression { skip_relevance: false, recency_keep: Some(2), skeletonize_code: true,  lossy_max_rows: 40, lossy_max_field: 200 },
+        0 => Aggression {
+            skip_relevance: true,
+            recency_keep: None,
+            skeletonize_code: false,
+            lossy_max_rows: 0,
+            lossy_max_field: 0,
+        },
+        1 => Aggression {
+            skip_relevance: false,
+            recency_keep: None,
+            skeletonize_code: false,
+            lossy_max_rows: 0,
+            lossy_max_field: 0,
+        },
+        2 => Aggression {
+            skip_relevance: false,
+            recency_keep: Some(2),
+            skeletonize_code: true,
+            lossy_max_rows: 0,
+            lossy_max_field: 0,
+        },
+        _ => Aggression {
+            skip_relevance: false,
+            recency_keep: Some(2),
+            skeletonize_code: true,
+            lossy_max_rows: 40,
+            lossy_max_field: 200,
+        },
     }
 }
 
@@ -78,8 +116,14 @@ fn lossy_keep(raw: &RawBlock, aggr: &Aggression, task: Option<&str>) -> Option<S
                 .map(|s| format!("[cull: code skeleton — bodies elided; re-read to expand]\n{s}"))
         }
         SegmentKind::ToolOutput { .. } if aggr.lossy_max_rows > 0 || aggr.lossy_max_field > 0 => {
-            cull_core::lossy_compact::compact_opts(&raw.text, 3, task, aggr.lossy_max_field, aggr.lossy_max_rows)
-                .map(|c| format!("[cull: lossy-compacted]\n{c}"))
+            cull_core::lossy_compact::compact_opts(
+                &raw.text,
+                3,
+                task,
+                aggr.lossy_max_field,
+                aggr.lossy_max_rows,
+            )
+            .map(|c| format!("[cull: lossy-compacted]\n{c}"))
         }
         _ => None, // lossless tier
     }
@@ -87,15 +131,21 @@ fn lossy_keep(raw: &RawBlock, aggr: &Aggression, task: Option<&str>) -> Option<S
 
 /// Concatenate the text of the LAST user message (string content or text blocks) — the task signal.
 pub fn last_user_text(req: &Value) -> String {
-    let Some(msgs) = req.get("messages").and_then(Value::as_array) else { return String::new(); };
+    let Some(msgs) = req.get("messages").and_then(Value::as_array) else {
+        return String::new();
+    };
     for m in msgs.iter().rev() {
-        if m.get("role").and_then(Value::as_str) != Some("user") { continue; }
+        if m.get("role").and_then(Value::as_str) != Some("user") {
+            continue;
+        }
         return match m.get("content") {
             Some(Value::String(s)) => s.clone(),
-            Some(Value::Array(blocks)) => blocks.iter()
+            Some(Value::Array(blocks)) => blocks
+                .iter()
                 .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
                 .filter_map(|b| b.get("text").and_then(Value::as_str))
-                .collect::<Vec<_>>().join(" "),
+                .collect::<Vec<_>>()
+                .join(" "),
             _ => String::new(),
         };
     }
@@ -113,22 +163,40 @@ pub fn compress_anthropic_request(req: &Value, opts: &CompressOpts) -> Value {
 
 /// Core variant returning `(compressed_request, Option<FidelityReport>)`. The report is `None`
 /// when compression is disabled or the request has no `tool_result` string content.
-pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts, aggr: Aggression) -> (Value, Option<FidelityReport>) {
-    if !opts.enabled { return (req.clone(), None); }
+pub fn compress_anthropic_request_reported(
+    req: &Value,
+    opts: &CompressOpts,
+    aggr: Aggression,
+) -> (Value, Option<FidelityReport>) {
+    if !opts.enabled {
+        return (req.clone(), None);
+    }
     let mut out = req.clone();
 
     // pass 1: build tool_use_id -> (tool_name, optional_path) from all tool_use blocks
     let mut meta: HashMap<String, (String, Option<String>)> = HashMap::new();
     if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
         for m in msgs {
-            let Some(blocks) = m.get("content").and_then(Value::as_array) else { continue; };
+            let Some(blocks) = m.get("content").and_then(Value::as_array) else {
+                continue;
+            };
             for b in blocks {
                 if b.get("type").and_then(Value::as_str) == Some("tool_use") {
                     if let Some(id) = b.get("id").and_then(Value::as_str) {
-                        let name = b.get("name").and_then(Value::as_str).unwrap_or("tool").to_string();
-                        let path = b.get("input").and_then(|i| {
-                            i.get("path").or_else(|| i.get("file")).or_else(|| i.get("file_path"))
-                        }).and_then(Value::as_str).map(String::from);
+                        let name = b
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("tool")
+                            .to_string();
+                        let path = b
+                            .get("input")
+                            .and_then(|i| {
+                                i.get("path")
+                                    .or_else(|| i.get("file"))
+                                    .or_else(|| i.get("file_path"))
+                            })
+                            .and_then(Value::as_str)
+                            .map(String::from);
                         meta.insert(id.to_string(), (name, path));
                     }
                 }
@@ -140,16 +208,23 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts, agg
     let mut boundary: Option<(usize, usize)> = None;
     if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
         for (mi, m) in msgs.iter().enumerate() {
-            if m.get("cache_control").is_some() { boundary = Some((mi, usize::MAX)); }
+            if m.get("cache_control").is_some() {
+                boundary = Some((mi, usize::MAX));
+            }
             if let Some(blocks) = m.get("content").and_then(Value::as_array) {
                 for (bi, b) in blocks.iter().enumerate() {
-                    if b.get("cache_control").is_some() { boundary = Some((mi, bi)); }
+                    if b.get("cache_control").is_some() {
+                        boundary = Some((mi, bi));
+                    }
                 }
             }
         }
     }
     let in_cached_prefix = |mi: usize, bi: usize| -> bool {
-        match boundary { Some((bm, bb)) => (mi, bi) <= (bm, bb), None => false }
+        match boundary {
+            Some((bm, bb)) => (mi, bi) <= (bm, bb),
+            None => false,
+        }
     };
 
     // pass 2: collect tool_result contents (string or array-of-text) with rich kind + path, and their locations
@@ -157,26 +232,47 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts, agg
     let mut locs: Vec<(usize, usize, Option<usize>)> = Vec::new();
     if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
         for (mi, m) in msgs.iter().enumerate() {
-            let Some(blocks) = m.get("content").and_then(Value::as_array) else { continue; };
+            let Some(blocks) = m.get("content").and_then(Value::as_array) else {
+                continue;
+            };
             for (bi, b) in blocks.iter().enumerate() {
                 if b.get("type").and_then(Value::as_str) == Some("tool_result") {
-                    if in_cached_prefix(mi, bi) { continue; }
-                    let (class, path) = b.get("tool_use_id").and_then(Value::as_str)
-                        .and_then(|id| meta.get(id)).cloned()
+                    if in_cached_prefix(mi, bi) {
+                        continue;
+                    }
+                    let (class, path) = b
+                        .get("tool_use_id")
+                        .and_then(Value::as_str)
+                        .and_then(|id| meta.get(id))
+                        .cloned()
                         .unwrap_or_else(|| ("tool_result".to_string(), None));
-                    let kind = if path.is_some() { SegmentKind::FileRead }
-                               else { SegmentKind::ToolOutput { class: class.clone() } };
+                    let kind = if path.is_some() {
+                        SegmentKind::FileRead
+                    } else {
+                        SegmentKind::ToolOutput {
+                            class: class.clone(),
+                        }
+                    };
                     match b.get("content") {
                         Some(Value::String(text)) => {
-                            raws.push(RawBlock { role: Role::Tool, kind, text: text.clone(), path });
+                            raws.push(RawBlock {
+                                role: Role::Tool,
+                                kind,
+                                text: text.clone(),
+                                path,
+                            });
                             locs.push((mi, bi, None));
                         }
                         Some(Value::Array(inner)) => {
                             for (k, ib) in inner.iter().enumerate() {
                                 if ib.get("type").and_then(Value::as_str) == Some("text") {
                                     if let Some(text) = ib.get("text").and_then(Value::as_str) {
-                                        raws.push(RawBlock { role: Role::Tool, kind: kind.clone(),
-                                            text: text.to_string(), path: path.clone() });
+                                        raws.push(RawBlock {
+                                            role: Role::Tool,
+                                            kind: kind.clone(),
+                                            text: text.to_string(),
+                                            path: path.clone(),
+                                        });
                                         locs.push((mi, bi, Some(k)));
                                     }
                                 }
@@ -188,15 +284,19 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts, agg
             }
         }
     }
-    if raws.is_empty() { return (out, None); }
+    if raws.is_empty() {
+        return (out, None);
+    }
 
     let counter = ApproxCounter::o200k();
     let segs = segment(&raws, &counter);
     let mut passes = structural_passes(); // supersession + IVM + dedup
-    // Query-relevance pruning — the controller backs it off on a verbosity spike and tightens its
-    // recency window as the context fills. Default (skip=false, recency None→6) is byte-unchanged.
+                                          // Query-relevance pruning — the controller backs it off on a verbosity spike and tightens its
+                                          // recency window as the context fills. Default (skip=false, recency None→6) is byte-unchanged.
     if !aggr.skip_relevance {
-        passes.push(Box::new(RelevancePass { recency_keep: aggr.recency_keep.unwrap_or(6) }));
+        passes.push(Box::new(RelevancePass {
+            recency_keep: aggr.recency_keep.unwrap_or(6),
+        }));
     }
     passes.push(Box::new(ReasoningTracePass::default()));
     let task_text = last_user_text(req);
@@ -210,30 +310,53 @@ pub fn compress_anthropic_request_reported(req: &Value, opts: &CompressOpts, agg
     }
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
-    debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool_result");
-    let lossy_task = if task_text.is_empty() { None } else { Some(task_text.as_str()) };
+    debug_assert_eq!(
+        plan.entries.len(),
+        locs.len(),
+        "one plan entry per collected tool_result"
+    );
+    let lossy_task = if task_text.is_empty() {
+        None
+    } else {
+        Some(task_text.as_str())
+    };
     for (i, (entry, (mi, bi, inner))) in plan.entries.iter().zip(locs.iter()).enumerate() {
         let replacement = match &entry.action {
-            SegmentAction::Drop(reason) =>
-                Some(format!("[cull: tool output elided — {reason:?}]")),
-            SegmentAction::Replace { rendered, .. } =>
-                Some(format!("[cull: delta vs an earlier read]\n{}", String::from_utf8_lossy(rendered))),
+            SegmentAction::Drop(reason) => Some(format!("[cull: tool output elided — {reason:?}]")),
+            SegmentAction::Replace { rendered, .. } => Some(format!(
+                "[cull: delta vs an earlier read]\n{}",
+                String::from_utf8_lossy(rendered)
+            )),
             SegmentAction::Keep => lossy_keep(&raws[i], &aggr, lossy_task),
         };
-        let Some(text) = replacement else { continue; };
-        let base = out.get_mut("messages").and_then(Value::as_array_mut)
+        let Some(text) = replacement else {
+            continue;
+        };
+        let base = out
+            .get_mut("messages")
+            .and_then(Value::as_array_mut)
             .and_then(|ms| ms.get_mut(*mi))
-            .and_then(|m| m.get_mut("content")).and_then(Value::as_array_mut)
+            .and_then(|m| m.get_mut("content"))
+            .and_then(Value::as_array_mut)
             .and_then(|bs| bs.get_mut(*bi));
-        let Some(block) = base else { continue; };
+        let Some(block) = base else {
+            continue;
+        };
         match inner {
             None => {
-                if let Some(c) = block.get_mut("content") { *c = Value::String(text); }
+                if let Some(c) = block.get_mut("content") {
+                    *c = Value::String(text);
+                }
             }
             Some(k) => {
-                if let Some(t) = block.get_mut("content").and_then(Value::as_array_mut)
-                    .and_then(|arr| arr.get_mut(*k)).and_then(|tb| tb.get_mut("text"))
-                { *t = Value::String(text); }
+                if let Some(t) = block
+                    .get_mut("content")
+                    .and_then(Value::as_array_mut)
+                    .and_then(|arr| arr.get_mut(*k))
+                    .and_then(|tb| tb.get_mut("text"))
+                {
+                    *t = Value::String(text);
+                }
             }
         }
     }
@@ -251,23 +374,44 @@ pub fn compress_openai_request(req: &Value, opts: &CompressOpts) -> Value {
 
 /// Core variant returning `(compressed_request, Option<FidelityReport>)`. The report is `None`
 /// when compression is disabled or the request has no `role:"tool"` string content.
-pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts, aggr: Aggression) -> (Value, Option<FidelityReport>) {
-    if !opts.enabled { return (req.clone(), None); }
+pub fn compress_openai_request_reported(
+    req: &Value,
+    opts: &CompressOpts,
+    aggr: Aggression,
+) -> (Value, Option<FidelityReport>) {
+    if !opts.enabled {
+        return (req.clone(), None);
+    }
     let mut out = req.clone();
 
     // pass 1: build tool_call_id -> (name, optional_path) from all assistant tool_calls
     let mut meta: HashMap<String, (String, Option<String>)> = HashMap::new();
     if let Some(msgs) = out.get("messages").and_then(Value::as_array) {
         for m in msgs {
-            let Some(calls) = m.get("tool_calls").and_then(Value::as_array) else { continue; };
+            let Some(calls) = m.get("tool_calls").and_then(Value::as_array) else {
+                continue;
+            };
             for c in calls {
-                let Some(id) = c.get("id").and_then(Value::as_str) else { continue; };
+                let Some(id) = c.get("id").and_then(Value::as_str) else {
+                    continue;
+                };
                 let f = c.get("function");
-                let name = f.and_then(|f| f.get("name")).and_then(Value::as_str).unwrap_or("tool").to_string();
-                let path = f.and_then(|f| f.get("arguments")).and_then(Value::as_str)
+                let name = f
+                    .and_then(|f| f.get("name"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("tool")
+                    .to_string();
+                let path = f
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(Value::as_str)
                     .and_then(|a| serde_json::from_str::<Value>(a).ok())
-                    .and_then(|args| args.get("path").or_else(|| args.get("file")).or_else(|| args.get("file_path"))
-                        .and_then(Value::as_str).map(String::from));
+                    .and_then(|args| {
+                        args.get("path")
+                            .or_else(|| args.get("file"))
+                            .or_else(|| args.get("file_path"))
+                            .and_then(Value::as_str)
+                            .map(String::from)
+                    });
                 meta.insert(id.to_string(), (name, path));
             }
         }
@@ -282,51 +426,91 @@ pub fn compress_openai_request_reported(req: &Value, opts: &CompressOpts, aggr: 
             match m.get("role").and_then(Value::as_str) {
                 Some("tool") => {
                     if let Some(text) = m.get("content").and_then(Value::as_str) {
-                        let (class, path) = m.get("tool_call_id").and_then(Value::as_str)
-                            .and_then(|id| meta.get(id)).cloned()
+                        let (class, path) = m
+                            .get("tool_call_id")
+                            .and_then(Value::as_str)
+                            .and_then(|id| meta.get(id))
+                            .cloned()
                             .unwrap_or_else(|| ("tool".to_string(), None));
-                        let kind = if path.is_some() { SegmentKind::FileRead }
-                                   else { SegmentKind::ToolOutput { class } };
-                        raws.push(RawBlock { role: Role::Tool, kind, text: text.to_string(), path });
+                        let kind = if path.is_some() {
+                            SegmentKind::FileRead
+                        } else {
+                            SegmentKind::ToolOutput { class }
+                        };
+                        raws.push(RawBlock {
+                            role: Role::Tool,
+                            kind,
+                            text: text.to_string(),
+                            path,
+                        });
                         locs.push(mi);
                     }
                 }
-                Some("user") => { if let Some(t) = m.get("content").and_then(Value::as_str) { task = t.to_string(); } }
+                Some("user") => {
+                    if let Some(t) = m.get("content").and_then(Value::as_str) {
+                        task = t.to_string();
+                    }
+                }
                 _ => {}
             }
         }
     }
-    if raws.is_empty() { return (out, None); }
+    if raws.is_empty() {
+        return (out, None);
+    }
 
     let counter = ApproxCounter::o200k();
     let segs = segment(&raws, &counter);
     let mut passes = structural_passes(); // supersession + IVM + dedup
-    // relevance pruning — controller backs off on a verbosity spike and tightens recency as the
-    // window fills (override falls back to the static opts.recency_keep)
+                                          // relevance pruning — controller backs off on a verbosity spike and tightens recency as the
+                                          // window fills (override falls back to the static opts.recency_keep)
     if !aggr.skip_relevance {
-        passes.push(Box::new(RelevancePass { recency_keep: aggr.recency_keep.unwrap_or(opts.recency_keep) }));
+        passes.push(Box::new(RelevancePass {
+            recency_keep: aggr.recency_keep.unwrap_or(opts.recency_keep),
+        }));
     }
     passes.push(Box::new(ReasoningTracePass::default()));
-    let plan = Planner::new(passes).plan_with_task(&segs, &SessionState::default(), &TaskSignal::from_text(&task));
+    let plan = Planner::new(passes).plan_with_task(
+        &segs,
+        &SessionState::default(),
+        &TaskSignal::from_text(&task),
+    );
     let (_e, report) = emit(&segs, &plan);
 
     let savings = report.input_tokens.saturating_sub(report.net_tokens);
-    if savings < opts.min_savings { return (req.clone(), None); }
+    if savings < opts.min_savings {
+        return (req.clone(), None);
+    }
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
-    debug_assert_eq!(plan.entries.len(), locs.len(), "one plan entry per collected tool message");
-    let lossy_task = if task.is_empty() { None } else { Some(task.as_str()) };
+    debug_assert_eq!(
+        plan.entries.len(),
+        locs.len(),
+        "one plan entry per collected tool message"
+    );
+    let lossy_task = if task.is_empty() {
+        None
+    } else {
+        Some(task.as_str())
+    };
     for (i, (entry, mi)) in plan.entries.iter().zip(locs.iter()).enumerate() {
         let replacement = match &entry.action {
             SegmentAction::Drop(reason) => Some(format!("[cull: tool output elided — {reason:?}]")),
-            SegmentAction::Replace { rendered, .. } =>
-                Some(format!("[cull: delta vs an earlier read]\n{}", String::from_utf8_lossy(rendered))),
+            SegmentAction::Replace { rendered, .. } => Some(format!(
+                "[cull: delta vs an earlier read]\n{}",
+                String::from_utf8_lossy(rendered)
+            )),
             SegmentAction::Keep => lossy_keep(&raws[i], &aggr, lossy_task),
         };
         if let Some(text) = replacement {
-            if let Some(c) = out.get_mut("messages").and_then(Value::as_array_mut)
-                .and_then(|ms| ms.get_mut(*mi)).and_then(|m| m.get_mut("content"))
-            { *c = Value::String(text); }
+            if let Some(c) = out
+                .get_mut("messages")
+                .and_then(Value::as_array_mut)
+                .and_then(|ms| ms.get_mut(*mi))
+                .and_then(|m| m.get_mut("content"))
+            {
+                *c = Value::String(text);
+            }
         }
     }
     (out, Some(report))
@@ -380,11 +564,26 @@ mod tests {
     #[test]
     fn compresses_irrelevant_tool_result_keeps_structure() {
         let req = sample_req();
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 });
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 1,
+                min_savings: 0,
+            },
+        );
 
         // structure preserved: same message count, roles, block counts
-        assert_eq!(out["messages"].as_array().unwrap().len(), req["messages"].as_array().unwrap().len());
-        for (a, b) in out["messages"].as_array().unwrap().iter().zip(req["messages"].as_array().unwrap()) {
+        assert_eq!(
+            out["messages"].as_array().unwrap().len(),
+            req["messages"].as_array().unwrap().len()
+        );
+        for (a, b) in out["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(req["messages"].as_array().unwrap())
+        {
             assert_eq!(a["role"], b["role"]);
             if let (Some(ac), Some(bc)) = (a["content"].as_array(), b["content"].as_array()) {
                 assert_eq!(ac.len(), bc.len(), "block count per message unchanged");
@@ -396,14 +595,30 @@ mod tests {
         assert_eq!(out["model"], req["model"]);
         assert_eq!(out["max_tokens"], req["max_tokens"]);
         // tool_use blocks byte-identical
-        assert_eq!(out["messages"][1]["content"][1], req["messages"][1]["content"][1]);
-        assert_eq!(out["messages"][3]["content"][0], req["messages"][3]["content"][0]);
+        assert_eq!(
+            out["messages"][1]["content"][1],
+            req["messages"][1]["content"][1]
+        );
+        assert_eq!(
+            out["messages"][3]["content"][0],
+            req["messages"][3]["content"][0]
+        );
 
         // the irrelevant kafka tool_result (msg 2) is stubbed; the relevant jwt one (msg 4) survives
-        let kafka = out["messages"][2]["content"][0]["content"].as_str().unwrap();
-        let jwt = out["messages"][4]["content"][0]["content"].as_str().unwrap();
-        assert!(kafka.contains("[cull"), "irrelevant tool_result stubbed: {kafka}");
-        assert!(jwt.contains("jwt authentication middleware"), "relevant tool_result preserved: {jwt}");
+        let kafka = out["messages"][2]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        let jwt = out["messages"][4]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            kafka.contains("[cull"),
+            "irrelevant tool_result stubbed: {kafka}"
+        );
+        assert!(
+            jwt.contains("jwt authentication middleware"),
+            "relevant tool_result preserved: {jwt}"
+        );
         // tool_use_id linkage preserved on the stubbed block
         assert_eq!(out["messages"][2]["content"][0]["tool_use_id"], "t1");
     }
@@ -411,7 +626,14 @@ mod tests {
     #[test]
     fn disabled_is_passthrough() {
         let req = sample_req();
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: false, recency_keep: 4, min_savings: 0 });
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: false,
+                recency_keep: 4,
+                min_savings: 0,
+            },
+        );
         assert_eq!(out, req);
     }
 
@@ -432,10 +654,24 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"g2","content":"NEW grep run alpha beta gamma delta"}]},
             {"role":"user","content":"continue with alpha beta gamma"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
-        let older = out["messages"][1]["content"][0]["content"].as_str().unwrap();
-        let newer = out["messages"][3]["content"][0]["content"].as_str().unwrap();
-        assert!(older.contains("[cull"), "older same-tool output superseded: {older}");
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 0,
+                min_savings: 0,
+            },
+        );
+        let older = out["messages"][1]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        let newer = out["messages"][3]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            older.contains("[cull"),
+            "older same-tool output superseded: {older}"
+        );
         assert!(newer.contains("NEW grep run"), "newest kept: {newer}");
     }
 
@@ -465,17 +701,42 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"r2","content": changed}]},
             {"role":"user","content":"keep working on src/x.rs CHANGED"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 0,
+                min_savings: 0,
+            },
+        );
         // first read kept verbatim; second becomes a delta marker (smaller)
-        assert_eq!(out["messages"][1]["content"][0]["content"].as_str().unwrap(), base);
-        let second = out["messages"][3]["content"][0]["content"].as_str().unwrap();
-        assert!(second.contains("[cull: delta"), "re-read became a delta: {second}");
+        assert_eq!(
+            out["messages"][1]["content"][0]["content"]
+                .as_str()
+                .unwrap(),
+            base
+        );
+        let second = out["messages"][3]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            second.contains("[cull: delta"),
+            "re-read became a delta: {second}"
+        );
     }
 
     #[test]
     fn reported_returns_a_fidelity_report() {
         let req = sample_req();
-        let (_out, report) = compress_anthropic_request_reported(&req, &CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 }, Aggression::default());
+        let (_out, report) = compress_anthropic_request_reported(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 1,
+                min_savings: 0,
+            },
+            Aggression::default(),
+        );
         assert!(report.is_some());
         assert!(report.unwrap().input_tokens > 0);
     }
@@ -495,24 +756,46 @@ mod tests {
                 "content":"jwt authentication middleware verifies the token signature"},
             {"role":"user","content":"work on authentication jwt token verification"}
         ]});
-        let opts = CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 };
+        let opts = CompressOpts {
+            enabled: true,
+            recency_keep: 0,
+            min_savings: 0,
+        };
         // relevance ON (normal): the irrelevant grep tool message is pruned
         let pruned = compress_openai_request_reported(&req, &opts, Aggression::default());
-        assert!(pruned.0["messages"][1]["content"].as_str().unwrap().contains("[cull"),
-            "relevance ON prunes the irrelevant output");
+        assert!(
+            pruned.0["messages"][1]["content"]
+                .as_str()
+                .unwrap()
+                .contains("[cull"),
+            "relevance ON prunes the irrelevant output"
+        );
         // controller back-off (skip_relevance = verbosity-spike response): the SAME output is kept
-        let backoff = Aggression { skip_relevance: true, ..Aggression::default() };
+        let backoff = Aggression {
+            skip_relevance: true,
+            ..Aggression::default()
+        };
         let kept = compress_openai_request_reported(&req, &opts, backoff);
-        assert!(kept.0["messages"][1]["content"].as_str().unwrap().contains("kubernetes"),
-            "controller back-off keeps the output — no relevance pruning");
+        assert!(
+            kept.0["messages"][1]["content"]
+                .as_str()
+                .unwrap()
+                .contains("kubernetes"),
+            "controller back-off keeps the output — no relevance pruning"
+        );
     }
 
     #[test]
     fn controller_maps_signals_to_aggression_levels() {
         // low fill, no spike = pre-controller default (relevance on, no overrides, no lossy/skeleton)
         let d = controller(false, 0.1);
-        assert!(!d.skip_relevance && d.recency_keep.is_none() && !d.skeletonize_code
-            && d.lossy_max_rows == 0 && d.lossy_max_field == 0);
+        assert!(
+            !d.skip_relevance
+                && d.recency_keep.is_none()
+                && !d.skeletonize_code
+                && d.lossy_max_rows == 0
+                && d.lossy_max_field == 0
+        );
         // verbosity spike at low fill = back off (skip relevance)
         assert!(controller(true, 0.1).skip_relevance);
         // window filling = tighten recency + skeletonize code, still no lossy tool-output compaction
@@ -524,7 +807,11 @@ mod tests {
         assert!(hi.lossy_max_rows > 0 && hi.skeletonize_code && hi.recency_keep == Some(2));
         // a spike steps DOWN one level even when full: drops the lossy tier, keeps skeleton + tighten
         let hi_spike = controller(true, 0.9);
-        assert!(hi_spike.lossy_max_rows == 0 && hi_spike.skeletonize_code && hi_spike.recency_keep == Some(2));
+        assert!(
+            hi_spike.lossy_max_rows == 0
+                && hi_spike.skeletonize_code
+                && hi_spike.recency_keep == Some(2)
+        );
     }
 
     #[test]
@@ -540,11 +827,22 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content": big}]},
             {"role":"user","content":"continue working"}
         ]});
-        let aggr = Aggression { lossy_max_rows: 20, ..Aggression::default() };
+        let aggr = Aggression {
+            lossy_max_rows: 20,
+            ..Aggression::default()
+        };
         let (out, _r) = compress_anthropic_request_reported(&req, &CompressOpts::default(), aggr);
-        let content = out["messages"][1]["content"][0]["content"].as_str().unwrap();
-        assert!(content.contains("[cull: lossy-compacted]"), "kept output lossy-compacted: {content:.80}");
-        assert!(content.len() < big.len(), "lossy output is smaller than the original");
+        let content = out["messages"][1]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            content.contains("[cull: lossy-compacted]"),
+            "kept output lossy-compacted: {content:.80}"
+        );
+        assert!(
+            content.len() < big.len(),
+            "lossy output is smaller than the original"
+        );
     }
 
     #[test]
@@ -557,12 +855,26 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"r","content": code}]},
             {"role":"user","content":"continue"}
         ]});
-        let aggr = Aggression { skeletonize_code: true, ..Aggression::default() };
+        let aggr = Aggression {
+            skeletonize_code: true,
+            ..Aggression::default()
+        };
         let (out, _r) = compress_anthropic_request_reported(&req, &CompressOpts::default(), aggr);
-        let content = out["messages"][1]["content"][0]["content"].as_str().unwrap();
-        assert!(content.contains("[cull: code skeleton"), "code read skeletonized: {content:.80}");
-        assert!(content.contains("pub fn run(x: i32) -> i32"), "signature kept: {content:.120}");
-        assert!(!content.contains("let b = a * 2"), "body elided: {content:.120}");
+        let content = out["messages"][1]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            content.contains("[cull: code skeleton"),
+            "code read skeletonized: {content:.80}"
+        );
+        assert!(
+            content.contains("pub fn run(x: i32) -> i32"),
+            "signature kept: {content:.120}"
+        );
+        assert!(
+            !content.contains("let b = a * 2"),
+            "body elided: {content:.120}"
+        );
     }
 
     #[test]
@@ -577,13 +889,33 @@ mod tests {
             ]}]},
             {"role":"user","content":"fix authentication jwt"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 0,
+                min_savings: 0,
+            },
+        );
         // structure preserved: array content still an array with one block of type text
-        assert_eq!(out["messages"][1]["content"][0]["content"][0]["type"], "text");
-        let elided = out["messages"][1]["content"][0]["content"][0]["text"].as_str().unwrap();
-        let kept   = out["messages"][2]["content"][0]["content"][0]["text"].as_str().unwrap();
-        assert!(elided.contains("[cull"), "irrelevant array-content text elided: {elided}");
-        assert!(kept.contains("jwt authentication middleware"), "relevant kept: {kept}");
+        assert_eq!(
+            out["messages"][1]["content"][0]["content"][0]["type"],
+            "text"
+        );
+        let elided = out["messages"][1]["content"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let kept = out["messages"][2]["content"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        assert!(
+            elided.contains("[cull"),
+            "irrelevant array-content text elided: {elided}"
+        );
+        assert!(
+            kept.contains("jwt authentication middleware"),
+            "relevant kept: {kept}"
+        );
     }
 
     #[test]
@@ -600,14 +932,30 @@ mod tests {
                 {"role":"user","content":"fix authentication jwt"}
             ]
         });
-        let out = compress_openai_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        let out = compress_openai_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 0,
+                min_savings: 0,
+            },
+        );
         // structure: same message count, roles, tool_calls untouched
         assert_eq!(out["messages"].as_array().unwrap().len(), 5);
-        assert_eq!(out["messages"][0]["tool_calls"], req["messages"][0]["tool_calls"]);
+        assert_eq!(
+            out["messages"][0]["tool_calls"],
+            req["messages"][0]["tool_calls"]
+        );
         assert_eq!(out["model"], req["model"]);
         // irrelevant tool message elided; relevant kept
-        assert!(out["messages"][1]["content"].as_str().unwrap().contains("[cull"));
-        assert!(out["messages"][3]["content"].as_str().unwrap().contains("jwt authentication middleware"));
+        assert!(out["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("[cull"));
+        assert!(out["messages"][3]["content"]
+            .as_str()
+            .unwrap()
+            .contains("jwt authentication middleware"));
         // tool_call_id preserved
         assert_eq!(out["messages"][1]["tool_call_id"], "c1");
     }
@@ -615,7 +963,17 @@ mod tests {
     #[test]
     fn openai_disabled_is_passthrough() {
         let req = serde_json::json!({"model":"x","messages":[{"role":"user","content":"hi"}]});
-        assert_eq!(compress_openai_request(&req, &CompressOpts { enabled: false, recency_keep: 4, min_savings: 0 }), req);
+        assert_eq!(
+            compress_openai_request(
+                &req,
+                &CompressOpts {
+                    enabled: false,
+                    recency_keep: 4,
+                    min_savings: 0
+                }
+            ),
+            req
+        );
     }
 
     #[test]
@@ -644,12 +1002,27 @@ mod tests {
                 "content":"also unrelated kafka content AFTER the breakpoint six"}]},
             {"role":"user","content":"do something about authentication jwt"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 });
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 0,
+                min_savings: 0,
+            },
+        );
         // the cached (pre-breakpoint) tool_result is byte-identical
-        assert_eq!(out["messages"][1]["content"][0]["content"], req["messages"][1]["content"][0]["content"]);
+        assert_eq!(
+            out["messages"][1]["content"][0]["content"],
+            req["messages"][1]["content"][0]["content"]
+        );
         // the oldest post-breakpoint irrelevant block (aged out of recency window) is elided
-        let after = out["messages"][2]["content"][0]["content"].as_str().unwrap();
-        assert!(after.contains("[cull"), "post-breakpoint irrelevant output compressed: {after}");
+        let after = out["messages"][2]["content"][0]["content"]
+            .as_str()
+            .unwrap();
+        assert!(
+            after.contains("[cull"),
+            "post-breakpoint irrelevant output compressed: {after}"
+        );
     }
 
     #[test]
@@ -660,7 +1033,14 @@ mod tests {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"g1","content":"x"}]},
             {"role":"user","content":"do something unrelated entirely"}
         ]});
-        let out = compress_anthropic_request(&req, &CompressOpts { enabled: true, recency_keep: 0, min_savings: 1000 });
+        let out = compress_anthropic_request(
+            &req,
+            &CompressOpts {
+                enabled: true,
+                recency_keep: 0,
+                min_savings: 1000,
+            },
+        );
         assert_eq!(out, req, "below the savings threshold -> exact passthrough");
     }
 }

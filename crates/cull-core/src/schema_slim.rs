@@ -79,14 +79,24 @@ mod tests {
                     "required": ["field_name", "title", "readOnly"]
                 }
             }]
-        })).unwrap();
+        }))
+        .unwrap();
         let out = slim(&text).expect("should slim");
         assert!(out.len() < text.len(), "smaller");
         // schema-level annotations gone
         assert!(!out.contains("$schema"), "$schema dropped: {out}");
-        assert!(!out.contains("UpdateFieldParameters"), "schema title dropped");
+        assert!(
+            !out.contains("UpdateFieldParameters"),
+            "schema title dropped"
+        );
         // property names + behavior preserved
-        for keep in ["field_name", "\"title\"", "readOnly", "required", "Update a field"] {
+        for keep in [
+            "field_name",
+            "\"title\"",
+            "readOnly",
+            "required",
+            "Update a field",
+        ] {
             assert!(out.contains(keep), "must preserve {keep}: {out}");
         }
         // required array still references surviving property names

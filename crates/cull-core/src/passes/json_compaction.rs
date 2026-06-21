@@ -17,7 +17,9 @@ pub struct JsonCompactionPass {
 
 impl JsonCompactionPass {
     pub fn new() -> Self {
-        Self { counter: ApproxCounter::o200k() }
+        Self {
+            counter: ApproxCounter::o200k(),
+        }
     }
 }
 
@@ -64,18 +66,25 @@ impl Pass for JsonCompactionPass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planner::Planner;
-    use crate::session::SessionState;
-    use crate::segment::*;
     use crate::plan::SegmentAction;
+    use crate::planner::Planner;
+    use crate::segment::*;
+    use crate::session::SessionState;
 
     fn json_seg(id: u64, text: &str) -> Segment {
         Segment {
-            id: SegmentId(id), kind: SegmentKind::ToolOutput { class: "json".into() },
-            role: Role::Tool, bytes: text.as_bytes().to_vec(),
+            id: SegmentId(id),
+            kind: SegmentKind::ToolOutput {
+                class: "json".into(),
+            },
+            role: Role::Tool,
+            bytes: text.as_bytes().to_vec(),
             token_count: ApproxCounter::o200k().count(text) as u32,
-            position: id as usize, mutation_class: MutationClass::Fast,
-            origin: Origin::default(), protected_spans: vec![], refs: RefLedger::default(),
+            position: id as usize,
+            mutation_class: MutationClass::Fast,
+            origin: Origin::default(),
+            protected_spans: vec![],
+            refs: RefLedger::default(),
         }
     }
 
@@ -87,7 +96,8 @@ mod tests {
             {"id":2,"name":"item_2","value":3.0,"status":"active"},
             {"id":3,"name":"item_3","value":4.5,"status":"active"},
             {"id":4,"name":"item_4","value":6.0,"status":"active"}
-        ])).unwrap();
+        ]))
+        .unwrap();
         let seg = json_seg(0, &text);
         let original_tokens = seg.token_count;
         let plan = Planner::new(vec![Box::new(JsonCompactionPass::new())])

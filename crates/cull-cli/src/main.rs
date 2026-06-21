@@ -1,9 +1,12 @@
-use std::io::Read;
 use clap::{Parser, Subcommand};
 use cull_cli::run_compress_with_budget;
+use std::io::Read;
 
 #[derive(Parser)]
-#[command(name = "cull", about = "Query-aware, cache-correct, lossless context compression")]
+#[command(
+    name = "cull",
+    about = "Query-aware, cache-correct, lossless context compression"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Command,
@@ -60,7 +63,11 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Command::Compress { task, report, budget } => {
+        Command::Compress {
+            task,
+            report,
+            budget,
+        } => {
             let mut input = String::new();
             if std::io::stdin().read_to_string(&mut input).is_err() {
                 eprintln!("error: failed to read stdin");
@@ -72,7 +79,12 @@ fn main() {
                     let r = &out.report;
                     eprintln!(
                         "[cull] input={} net={} ratio={:.3} kept={} dropped={} replaced={}",
-                        r.input_tokens, r.net_tokens, r.ratio(), r.kept, r.dropped, r.replaced
+                        r.input_tokens,
+                        r.net_tokens,
+                        r.ratio(),
+                        r.kept,
+                        r.dropped,
+                        r.replaced
                     );
                     if report {
                         // simple line-oriented report (JSON serialization of FidelityReport is a later nicety)
@@ -81,7 +93,10 @@ fn main() {
                         }
                     }
                 }
-                Err(e) => { eprintln!("error: {e}"); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
             }
         }
         Command::SlimSchema => {
@@ -94,14 +109,25 @@ fn main() {
             let out = cull_core::schema_slim::slim(&input).unwrap_or(input);
             println!("{out}");
         }
-        Command::CompactLossy { boundary, task, max_field, max_rows } => {
+        Command::CompactLossy {
+            boundary,
+            task,
+            max_field,
+            max_rows,
+        } => {
             let mut input = String::new();
             if std::io::stdin().read_to_string(&mut input).is_err() {
                 eprintln!("error: failed to read stdin");
                 std::process::exit(1);
             }
-            let t = if task.is_empty() { None } else { Some(task.as_str()) };
-            let out = cull_core::lossy_compact::compact_opts(&input, boundary, t, max_field, max_rows).unwrap_or(input);
+            let t = if task.is_empty() {
+                None
+            } else {
+                Some(task.as_str())
+            };
+            let out =
+                cull_core::lossy_compact::compact_opts(&input, boundary, t, max_field, max_rows)
+                    .unwrap_or(input);
             println!("{out}");
         }
         Command::Skeletonize { path } => {

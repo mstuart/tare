@@ -4,7 +4,12 @@ use serde::{Deserialize, Serialize};
 pub struct SegmentId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Role { System, User, Assistant, Tool }
+pub enum Role {
+    System,
+    User,
+    Assistant,
+    Tool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentKind {
@@ -23,7 +28,11 @@ pub enum SegmentKind {
 
 /// Cache-stability class. Drives stability-ordered segmentation (spec section 8 Rule 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MutationClass { Frozen, Slow, Fast }
+pub enum MutationClass {
+    Frozen,
+    Slow,
+    Fast,
+}
 
 impl MutationClass {
     pub fn for_kind(kind: &SegmentKind) -> MutationClass {
@@ -36,10 +45,14 @@ impl MutationClass {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TaskPhase { Discovery, Planning, Execution, Verification }
-
-impl Default for TaskPhase { fn default() -> Self { TaskPhase::Discovery } }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum TaskPhase {
+    #[default]
+    Discovery,
+    Planning,
+    Execution,
+    Verification,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefLedger {
@@ -49,7 +62,10 @@ pub struct RefLedger {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Span { pub start: usize, pub end: usize }
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Origin {
@@ -81,13 +97,24 @@ mod tests {
 
     #[test]
     fn mutation_class_follows_kind() {
-        assert_eq!(MutationClass::for_kind(&SegmentKind::SystemPrompt), MutationClass::Frozen);
-        assert_eq!(MutationClass::for_kind(&SegmentKind::ToolSchema), MutationClass::Slow);
         assert_eq!(
-            MutationClass::for_kind(&SegmentKind::ToolOutput { class: "cargo-test".into() }),
+            MutationClass::for_kind(&SegmentKind::SystemPrompt),
+            MutationClass::Frozen
+        );
+        assert_eq!(
+            MutationClass::for_kind(&SegmentKind::ToolSchema),
+            MutationClass::Slow
+        );
+        assert_eq!(
+            MutationClass::for_kind(&SegmentKind::ToolOutput {
+                class: "cargo-test".into()
+            }),
             MutationClass::Fast
         );
-        assert_eq!(MutationClass::for_kind(&SegmentKind::ConversationTurn), MutationClass::Fast);
+        assert_eq!(
+            MutationClass::for_kind(&SegmentKind::ConversationTurn),
+            MutationClass::Fast
+        );
     }
 
     #[test]
