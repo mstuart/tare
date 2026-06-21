@@ -10,9 +10,17 @@ members = [
 ]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
 license = "MIT"
-repository = "https://github.com/<owner>/cull"
+description = "Query-aware, cache-correct, lossless-by-default context compression for LLM coding agents."
+repository = "https://github.com/markstuart/cull"
+homepage = "https://github.com/markstuart/cull"
+readme = "README.md"
+authors = ["Mark Stuart <stuartmark@gmail.com>"]
+keywords = ["llm", "context", "compression", "proxy", "tokens"]
+categories = ["command-line-utilities", "network-programming", "compression"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
