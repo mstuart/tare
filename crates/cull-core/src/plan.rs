@@ -50,7 +50,7 @@ pub fn input_tokens(segments: &[Segment]) -> u32 {
     segments.iter().map(|s| s.token_count).sum()
 }
 
-/// Tokens the plan emits (Keep=original, Drop=0, Replace=replacement). Assumes entries[i] <-> segments[i].
+/// Tokens the plan emits (Keep=original, Drop=0, Replace=replacement). Assumes entries\[i\] <-> segments\[i\].
 pub fn net_tokens(plan: &CompressionPlan, segments: &[Segment]) -> u32 {
     plan.entries
         .iter()
