@@ -102,11 +102,31 @@ fn split_sentences(text: &str) -> Vec<&str> {
 /// relevant to the task; drops the rest with an explicit marker.
 fn compact_text(text: &str, boundary: usize, syms: &Syms) -> Option<String> {
     let multiline = text.matches('\n').count() >= 4;
-    let (units, joiner, label): (Vec<&str>, &str, &str) = if multiline {
-        (text.split('\n').collect(), "\n", "lines")
-    } else {
-        (split_sentences(text), " ", "sentences")
-    };
+    // Flowing prose (few newlines): token-level telegraphic compaction beats sentence-level dropping.
+    // With a task, keep the relevant sentences whole, then telegraphic the rest.
+    if !multiline {
+        if syms.is_empty() {
+            return crate::telegraphic::compact(text);
+        }
+        // query-aware: keep task-relevant sentences verbatim; telegraphic the others; drop neither.
+        let sents = split_sentences(text);
+        if sents.len() < 6 {
+            return crate::telegraphic::compact(text);
+        }
+        let mut out_parts: Vec<String> = Vec::new();
+        for s in &sents {
+            if relevant(s, syms) || ALERTS.iter().any(|a| s.to_ascii_lowercase().contains(a)) {
+                out_parts.push((*s).to_string()); // keep relevant sentences intact
+            } else if let Some(t) = crate::telegraphic::compact(s) {
+                out_parts.push(t);
+            } else {
+                out_parts.push((*s).to_string());
+            }
+        }
+        let out = out_parts.join(" ");
+        return if out.len() < text.len() { Some(out) } else { crate::telegraphic::compact(text) };
+    }
+    let (units, joiner, label): (Vec<&str>, &str, &str) = (text.split('\n').collect(), "\n", "lines");
     let n = units.len();
     if n <= 2 * boundary + 4 {
         return None;
