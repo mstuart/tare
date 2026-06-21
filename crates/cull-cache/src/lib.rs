@@ -1,3 +1,5 @@
+//! Provider cache models and hit-rate floors — the basis for Cull's cache-correct compression.
+
 /// Caching provider + TTL regime (spec section 8). Determines the write/read multipliers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
