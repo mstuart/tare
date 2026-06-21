@@ -177,6 +177,7 @@ export function loadUser(id: number): User {
         assert!(out.contains("export interface User { id: number; name: string; }"));
         assert!(out.contains("export function loadUser(id: number): User"));
         assert!(!out.contains("db.query"), "body elided: {out}");
+        assert!(out.contains("cull: 3 lines hidden"), "accurate count for TS: {out}");
     }
 
     #[test]
@@ -194,6 +195,7 @@ func Add(a int, b int) int {
         assert!(out.contains("package main"));
         assert!(out.contains("func Add(a int, b int) int"));
         assert!(!out.contains("logResult"), "body elided: {out}");
+        assert!(out.contains("cull: 3 lines hidden"), "accurate count for Go: {out}");
     }
 
     #[test]
