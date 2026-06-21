@@ -1,3 +1,6 @@
+//! Cull's HTTP proxy: compresses Anthropic/OpenAI requests in-flight via a closed-loop,
+//! output-aware controller, then streams the upstream response back byte-for-byte.
+
 pub mod count;
 pub mod monitor;
 pub mod server;
