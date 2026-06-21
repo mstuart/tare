@@ -32,5 +32,6 @@ pub mod schema_slim;
 pub mod predicate;
 pub use predicate::narrow_tool_call;
 pub mod code;
+pub mod code_skeleton;
 pub mod emit;
 pub use emit::{emit, EmittedSegment, FidelityReport};
