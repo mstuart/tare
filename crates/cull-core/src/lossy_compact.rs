@@ -58,6 +58,24 @@ fn relevant(unit: &str, syms: &Syms) -> bool {
     syms.iter().any(|s| l.contains(s.as_str()))
 }
 
+/// Intrinsic information density of a text unit, no query needed: facts carry numbers (dates, codes,
+/// quantities), named entities (capitalized), and rare/long words; filler is short common words.
+/// Used to keep the fact-dense units of query-less prose — preserving information LLMLingua's
+/// token-level dropping scatters across sentences.
+fn salience(unit: &str) -> usize {
+    let mut score = 0;
+    for w in unit.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
+        if w.chars().any(|c| c.is_ascii_digit()) {
+            score += 3; // numbers/dates/codes/IDs — the highest-value facts
+        } else if w.chars().next().is_some_and(char::is_uppercase) && w.len() > 2 {
+            score += 2; // named entities
+        } else if w.len() >= 8 {
+            score += 1; // rare/long content words
+        }
+    }
+    score
+}
+
 /// Split prose into sentences, each slice keeping its terminal `.`/`!`/`?` (lossy-join safe).
 fn split_sentences(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
@@ -100,6 +118,22 @@ fn compact_text(text: &str, boundary: usize, syms: &Syms) -> Option<String> {
         let l = u.to_ascii_lowercase();
         if ALERTS.iter().any(|a| l.contains(a)) || relevant(u, syms) {
             keep[i] = true;
+        }
+    }
+    // Query-less: also keep the fact-dense units (top salience), preserving information throughout
+    // the text rather than only at the boundaries.
+    if syms.is_empty() {
+        let scores: Vec<usize> = units.iter().map(|u| salience(u)).collect();
+        let mut nonzero: Vec<usize> = scores.iter().copied().filter(|&s| s > 0).collect();
+        nonzero.sort_unstable();
+        if !nonzero.is_empty() {
+            // keep roughly the top third by salience
+            let thresh = nonzero[nonzero.len() * 2 / 3].max(1);
+            for (i, &s) in scores.iter().enumerate() {
+                if s >= thresh {
+                    keep[i] = true;
+                }
+            }
         }
     }
     let kept: Vec<&str> = units.iter().zip(&keep).filter(|(_, k)| **k).map(|(u, _)| *u).collect();
