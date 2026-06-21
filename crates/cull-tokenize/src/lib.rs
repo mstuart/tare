@@ -1,3 +1,5 @@
+//! Fast approximate token counting for Cull's compression decisions (chars/4 heuristic).
+
 /// Counts tokens for budgeting/segmentation. Exact provider counts (e.g. Anthropic
 /// `count_tokens`) are obtained via the proxy's network client; this is the fast offline
 /// approximation used for compression decisions.

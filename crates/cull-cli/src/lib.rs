@@ -1,3 +1,5 @@
+//! Library entry points for the `cull` CLI: run the compression pipeline and produce a fidelity report.
+
 use cull_core::emit::{emit, FidelityReport};
 use cull_core::passes::{query_passes, structural_passes};
 use cull_core::planner::Planner;
