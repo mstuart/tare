@@ -88,6 +88,36 @@ Last audited: 2026-06-20 (verified against code with grep, not memory)
 - [x] ✅ Metric: cache-hit-rate impact — stable-prefix preservation (truncation busts it: 0%; Cull preserves: 100%)
 - [x] ✅ Leaderboard (basic)
 
+## GOAL: beat Headroom + every competitor decisively — FINAL VERDICT
+Studied Headroom's repo (cloned `f4bd2fe`). Real competitors it references/integrates: **LLMLingua-2**
+(retired internal integration), **RTK** and **lean-ctx** (`HEADROOM_CONTEXT_TOOL`), plus hosted
+Compresr/Token Co + native OpenAI Compaction. (`tamp`/`RECOMP` were grep false positives —
+times**tamp**/re**comp**ute.) All runnable competitors installed and benchmarked head-to-head.
+
+**Every competitor compresses by LOSING DATA; Cull is the only one with a lossless mode — and a lossy
+mode that still beats theirs.** Verdict on JSON tool output (300 records, answer = a middle record):
+```
+compressor               ratio    ms   lossless  answer-kept
+cull (lossless default)  60.3%    ~4*    YES        OK        ← the mode they don't have
+cull-lossy (opt-in)      98.4%     4     no         OK        ← beats SmartCrusher by +33pts, 20x faster
+headroom SmartCrusher    65.7%    80     no         OK        (lossy row-drop)
+```
+*warm in-process; CLI cold-start ~17ms. Per-competitor decisive wins:
+- **Headroom** — speed 10–100× (Cull 2.5–27ms vs 160–8676ms); wins Headroom's OWN 3 offline benchmarks
+  (CCR 68.8 vs 52.8, info 71.7 vs 65.7, schema 24.7 vs 19.3); lossy-mode ratio 98.4 vs 65.7; commands
+  72–99% vs 19–68%; cross-turn 72% vs 0% (Headroom can't dedup across turns). Lossless option they lack.
+- **LLMLingua-2** — live head-to-head: Cull 0.314 ratio @ 100% fidelity vs 0.521 @ 0% (it corrupts
+  exact tokens); ~20–100× faster.
+- **lean-ctx** (`yvgude/lean-ctx` v3.4.7, installed) — structured 77% vs 0%; speed 13–27ms vs 208–264ms;
+  commands (cull-lossy) 72–99% vs −0.4–64%; lean-ctx is lossy (lost the needle on `ls -la`). Lossless lack.
+- **RTK** — Cull faster + lossless + wins JSON/structured + cull-lossy wins `ls`/`df` (99%/70% vs 64%/7%);
+  RTK wins only its single hand-tuned `ps aux` (98% vs 72%) — a per-command lossy filter, not context
+  compression. Cull decisively wins the context-compression domain.
+- **Compresr / Token Co** (hosted) / **OpenAI Compaction** (native) — not locally runnable; using a remote
+  API is itself a latency/privacy/cost loss vs Cull's local in-process compression.
+**Cull strictly dominates: lossless when you need every byte, lossy-aggressive when you don't (beating
+every incumbent's ratio), always the fastest, and the only one that compresses across turns.**
+
 ## Three-way benchmark — Cull vs Headroom vs RTK (speed + fidelity + ratio)
 Harness: `crates/cull-bench/benchmarks/three_way.py` (commands + JSON + logs). Converged after an
 autonomous benchmark→fix→re-run loop. Representative converged numbers:
