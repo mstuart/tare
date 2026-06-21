@@ -213,6 +213,108 @@ async fn halts_compression_after_three_low_hit_rate_turns() {
 }
 
 #[tokio::test]
+async fn skeletonizes_code_via_controller_under_high_fill() {
+    // A large request (fill >= 0.5) drives the controller to level-2 aggression, which skeletonizes
+    // kept source-file reads. Proves the fill -> controller -> skeleton path closes end-to-end.
+    let rec: Recorder = Arc::new(Mutex::new(None));
+    let upstream = Router::new().route("/v1/messages", post(upstream_handler)).with_state(rec.clone());
+    let up_port = spawn(upstream).await;
+    let state = Arc::new(ProxyState {
+        client: reqwest::Client::new(),
+        upstream: format!("http://127.0.0.1:{up_port}"),
+        opts: CompressOpts { enabled: true, recency_keep: 1, min_savings: 0 },
+        monitors: Default::default(),
+        outputs: Default::default(),
+    });
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // ~110k approx tokens of code (>0.5 of the 200k window) -> controller level 2.
+    let code = format!("pub fn big() -> i32 {{\n{}    0\n}}\n", "    let v = 1;\n".repeat(32_000));
+    let req = serde_json::json!({
+        "model":"claude-x","max_tokens":100,
+        "messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"r","name":"read","input":{"path":"big.rs"}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"r","content": code}]},
+            {"role":"user","content":"continue"}
+        ]
+    });
+    let resp = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+        .header("x-api-key","sk-test").json(&req).send().await.unwrap();
+    let aggr = resp.headers().get("x-cull-aggression")
+        .and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let _ = resp.text().await.unwrap();
+
+    let received = rec.lock().unwrap().clone().expect("upstream received a body");
+    assert_eq!(aggr, "tighten", "controller reached level-2 'tighten' under high fill");
+    assert!(received.contains("[cull: code skeleton"), "code read was skeletonized");
+    assert!(received.contains("pub fn big() -> i32"), "signature preserved");
+    assert!(received.len() < code.len(), "forwarded body far smaller than the raw code");
+}
+
+#[tokio::test]
+async fn verbosity_spike_backs_off_compression_end_to_end() {
+    // Mock upstream escalates completion_tokens; after the turn-4 spike, turn 5 must BACK OFF (skip
+    // relevance) so a normally-pruned irrelevant tool message survives. Proves output -> controller.
+    // Uses the OpenAI path (honors recency_keep: 0) so relevance — not recency — gates the grep result.
+    type Rec = Arc<Mutex<Vec<String>>>;
+    type Cnt = Arc<Mutex<u32>>;
+    async fn up(State((rec, cnt)): State<(Rec, Cnt)>, body: Bytes) -> String {
+        rec.lock().unwrap().push(String::from_utf8_lossy(&body).into_owned());
+        let mut c = cnt.lock().unwrap();
+        *c += 1;
+        let out = if *c >= 4 { 400 } else { 100 }; // turn 4 onward spikes vs the ~100 baseline
+        format!("{{\"ok\":true,\"usage\":{{\"completion_tokens\":{out}}}}}")
+    }
+    let rec: Rec = Arc::new(Mutex::new(Vec::new()));
+    let cnt: Cnt = Arc::new(Mutex::new(0));
+    let upstream = Router::new().route("/v1/chat/completions", post(up)).with_state((rec.clone(), cnt.clone()));
+    let up_port = spawn(upstream).await;
+    let state = Arc::new(ProxyState {
+        client: reqwest::Client::new(),
+        upstream: format!("http://127.0.0.1:{up_port}"),
+        opts: CompressOpts { enabled: true, recency_keep: 0, min_savings: 0 },
+        monitors: Default::default(),
+        outputs: Default::default(),
+    });
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // grep (irrelevant) + a different-tool read (relevant anchor) so supersession doesn't fire and
+    // relevance is the only thing pruning the grep result.
+    let req = serde_json::json!({
+        "model":"gpt-x",
+        "messages":[
+            {"role":"assistant","content":null,"tool_calls":[
+                {"id":"c1","type":"function","function":{"name":"grep","arguments":"{}"}}]},
+            {"role":"tool","tool_call_id":"c1","content":"kafka partitions offsets totally unrelated junk"},
+            {"role":"assistant","content":null,"tool_calls":[
+                {"id":"c2","type":"function","function":{"name":"read","arguments":"{\"path\":\"jwt.rs\"}"}}]},
+            {"role":"tool","tool_call_id":"c2","content":"jwt authentication middleware verify token"},
+            {"role":"user","content":"fix the authentication jwt bug"}
+        ]
+    });
+    let client = reqwest::Client::new();
+    let mut spike_header = false;
+    for _ in 0..5 {
+        let resp = client.post(format!("http://127.0.0.1:{proxy_port}/v1/chat/completions"))
+            .header("authorization","Bearer sk-test").json(&req).send().await.unwrap();
+        spike_header = resp.headers().get("x-cull-verbosity-spike").is_some();
+        let _ = resp.text().await.unwrap(); // drain so the tee's observe() completes
+    }
+    let bodies = rec.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 5);
+    // turn 1 (no spike): the irrelevant grep result is pruned by relevance
+    assert!(!bodies[0].contains("kafka partitions offsets totally unrelated"),
+        "turn 1 compressed: {}", bodies[0]);
+    // turn 5 (after the turn-4 verbosity spike): backed off -> grep result kept
+    assert!(bodies[4].contains("kafka partitions offsets totally unrelated"),
+        "turn 5 backed off (relevance skipped): {}", bodies[4]);
+    assert!(spike_header, "turn 5 response carries x-cull-verbosity-spike");
+}
+
+#[tokio::test]
 async fn count_tokens_exact_parses_input_tokens_and_falls_back() {
     use axum::{routing::post, Router, body::Bytes};
     use cull_proxy::count::{count_tokens_exact, count_tokens_or_approx};

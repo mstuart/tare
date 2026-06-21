@@ -62,14 +62,19 @@ impl OutputMonitor {
     pub fn new() -> Self { Self::default() }
 
     /// Record one turn's output token count. Returns `true` if it is a verbosity spike vs the
-    /// session baseline (after warmup). The baseline is then updated to include this turn.
+    /// session baseline (after warmup). A spike turn is NOT folded into the baseline — otherwise a
+    /// model stuck in verbosity-compensation would inflate the baseline and silence the signal after
+    /// the first spike. Baseline updates only on non-spike turns, so SUSTAINED verbosity keeps the
+    /// back-off engaged until output actually returns to normal.
     pub fn observe(&mut self, output_tokens: u64) -> bool {
         let o = output_tokens as f64;
         let spike = matches!(self.baseline, Some(b) if self.turns >= WARMUP_TURNS && o > b * SPIKE_FACTOR);
-        self.baseline = Some(match self.baseline {
-            Some(b) => EWMA_ALPHA * o + (1.0 - EWMA_ALPHA) * b,
-            None => o,
-        });
+        if !spike {
+            self.baseline = Some(match self.baseline {
+                Some(b) => EWMA_ALPHA * o + (1.0 - EWMA_ALPHA) * b,
+                None => o,
+            });
+        }
         self.turns += 1;
         self.spiking = spike;
         spike
@@ -148,5 +153,19 @@ mod tests {
         // even a huge second turn can't spike before the baseline is trustworthy
         assert!(!m.observe(10));
         assert!(!m.observe(10_000));
+    }
+
+    #[test]
+    fn output_monitor_sustained_verbosity_keeps_spiking() {
+        // regression for the EWMA-masking bug: a model stuck verbose must keep flagging, not just
+        // on the first spike turn (the spike must not inflate the baseline).
+        let mut m = OutputMonitor::new();
+        m.observe(100);
+        m.observe(100); // baseline ~100
+        assert!(m.observe(400), "first high turn spikes");
+        assert!(m.observe(400), "sustained high output STILL spikes (baseline not inflated)");
+        assert!(m.observe(400), "and keeps spiking");
+        // once output returns to normal, the baseline resumes and the spike clears
+        assert!(!m.observe(100));
     }
 }
