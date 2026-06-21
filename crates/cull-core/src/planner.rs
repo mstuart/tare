@@ -383,8 +383,8 @@ mod tests {
         // - seg1 shares "auth" with the task (future-needed) -> keep
         // - seg2 shares "session" with a CompactSummary plan/state (future-needed) -> keep
         // - seg3 is unrelated + old -> evicted
-        let mut s1 = kb(1, 1, MutationClass::Fast, 100, "auth login flow");
-        let mut s2 = kb(2, 2, MutationClass::Fast, 100, "session token rotation");
+        let s1 = kb(1, 1, MutationClass::Fast, 100, "auth login flow");
+        let s2 = kb(2, 2, MutationClass::Fast, 100, "session token rotation");
         let mut plan_seg = kb(3, 3, MutationClass::Fast, 1, "next: refactor session handling");
         plan_seg.kind = SegmentKind::CompactSummary;
         let s3 = kb(0, 0, MutationClass::Fast, 100, "kafka broker partitions offset");

@@ -37,9 +37,10 @@ impl MutationClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TaskPhase { Discovery, Planning, Execution, Verification }
+#[derive(Default)]
+pub enum TaskPhase { #[default]
+Discovery, Planning, Execution, Verification }
 
-impl Default for TaskPhase { fn default() -> Self { TaskPhase::Discovery } }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefLedger {

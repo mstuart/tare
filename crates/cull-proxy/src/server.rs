@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::collections::{HashMap, VecDeque};
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -37,13 +36,22 @@ const FORWARD_HEADERS: &[&str] = &[
 
 type CompressFn = fn(&serde_json::Value, &CompressOpts, Aggression) -> (serde_json::Value, Option<FidelityReport>);
 
-/// Stable per-session key: hash of `system` + the first message (both stable across a session).
+/// Stable per-session key: FNV-1a over `system` + the first message (both stable across a session).
+/// FNV — not `DefaultHasher` — so the key is reproducible across Rust versions and process restarts
+/// (a `rustup` upgrade must not silently re-key live sessions and reset their monitors).
 fn session_id(req: &serde_json::Value) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    req.get("system").map(|s| s.to_string()).unwrap_or_default().hash(&mut h);
-    req.get("messages").and_then(|m| m.as_array()).and_then(|a| a.first())
-        .map(|m| m.to_string()).unwrap_or_default().hash(&mut h);
-    h.finish()
+    fn fnv1a(bytes: &[u8], mut h: u64) -> u64 {
+        for &b in bytes {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h
+    }
+    let mut h = 0xcbf2_9ce4_8422_2325;
+    h = fnv1a(req.get("system").map(|s| s.to_string()).unwrap_or_default().as_bytes(), h);
+    h = fnv1a(req.get("messages").and_then(|m| m.as_array()).and_then(|a| a.first())
+        .map(|m| m.to_string()).unwrap_or_default().as_bytes(), h);
+    h
 }
 
 /// Anthropic TTL regime from any `cache_control.ttl == "1h"` in the request (default 5m).
@@ -103,6 +111,8 @@ fn hit_rate(read: u64, creation: u64) -> Option<f64> {
 const USAGE_SCAN_CAP: usize = 2 * 1024 * 1024; // 2 MB head scan window (message_start cache usage)
 const TAIL_SCAN_CAP: usize = 64 * 1024; // rolling tail window — the final usage event (output_tokens)
 const CONTEXT_WINDOW_TOKENS: f64 = 200_000.0; // default model-window estimate; override via CULL_CONTEXT_LIMIT
+const MAX_BODY_BYTES: usize = 32 * 1024 * 1024; // cap request-body buffering (DoS/OOM guard); 413 above this
+const MAX_SESSIONS: usize = 10_000; // bound the per-session monitor maps (cleared on overflow; soft state)
 
 async fn handle_generic(
     state: Arc<ProxyState>,
@@ -144,7 +154,10 @@ async fn handle_generic(
             // Controller drives per-turn aggression from {verbosity-spike, context-fill}; the
             // cache-floor halt is the separate full-passthrough branch below.
             let (compressed, report) = compress_fn(req_json, &state.opts, aggr);
-            (serde_json::to_vec(&compressed).unwrap_or_else(|_| body_bytes.to_vec()), report)
+            match serde_json::to_vec(&compressed) {
+                Ok(v) => (v, report),
+                Err(_) => (body_bytes.to_vec(), None), // serialize failed: forward original, drop the now-wrong report
+            }
         }
         _ => (body_bytes.to_vec(), None), // unparseable OR halted -> forward original unchanged
     };
@@ -186,20 +199,22 @@ async fn handle_generic(
             let upstream_stream = resp.bytes_stream();
             let body = Body::from_stream(async_stream::stream! {
                 let mut head: Vec<u8> = Vec::new();
-                let mut tail: Vec<u8> = Vec::new();
+                let mut tail: VecDeque<u8> = VecDeque::new(); // ring tail: O(drained) trim, no repeated O(N) shifts
                 futures_util::pin_mut!(upstream_stream);
                 while let Some(item) = upstream_stream.next().await {
                     if let Ok(chunk) = &item {
                         if head.len() < USAGE_SCAN_CAP { head.extend_from_slice(chunk); }
-                        tail.extend_from_slice(chunk);
+                        tail.extend(chunk.iter().copied());
                         if tail.len() > TAIL_SCAN_CAP { tail.drain(0..tail.len() - TAIL_SCAN_CAP); }
                     }
                     yield item;
                 }
-                let cache = parse_anthropic_usage(&head).or_else(|| parse_anthropic_usage(&tail));
+                let tail: &[u8] = tail.make_contiguous();
+                let cache = parse_anthropic_usage(&head).or_else(|| parse_anthropic_usage(tail));
                 if let (Some(id), Some((read, creation))) = (sid, cache) {
                     if let Some(h) = hit_rate(read, creation) {
                         if let Ok(mut map) = state_tee.monitors.lock() {
+                            if !map.contains_key(&id) && map.len() >= MAX_SESSIONS { map.clear(); }
                             map.entry(id).or_insert_with(|| HitRateMonitor::new(provider)).observe(h);
                         }
                     }
@@ -207,9 +222,10 @@ async fn handle_generic(
                 // Output-side sensor (compression-paradox): output_tokens land in the FINAL event.
                 // (A >2 MB streaming response whose usage event straddles the 64 KB tail boundary may
                 // skip ONE sample — non-fatal: the EWMA tolerates a gap, and head covers <=2 MB bodies.)
-                let out_tok = parse_output_tokens(&tail, provider).or_else(|| parse_output_tokens(&head, provider));
+                let out_tok = parse_output_tokens(tail, provider).or_else(|| parse_output_tokens(&head, provider));
                 if let (Some(id), Some(out_tok)) = (sid, out_tok) {
                     if let Ok(mut map) = state_tee.outputs.lock() {
+                        if !map.contains_key(&id) && map.len() >= MAX_SESSIONS { map.clear(); }
                         map.entry(id).or_default().observe(out_tok);
                     }
                 }
@@ -223,9 +239,9 @@ async fn handle_generic(
 
 async fn handle_messages(State(state): State<Arc<ProxyState>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
-    let body_bytes: Bytes = match axum::body::to_bytes(body, usize::MAX).await {
+    let body_bytes: Bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("failed to read body: {e}")).into_response(),
+        Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response(),
     };
     let provider = serde_json::from_slice::<serde_json::Value>(&body_bytes)
         .map(|v| detect_anthropic_provider(&v)).unwrap_or(Provider::Anthropic5m);
@@ -234,9 +250,9 @@ async fn handle_messages(State(state): State<Arc<ProxyState>>, req: Request) -> 
 
 async fn handle_chat(State(state): State<Arc<ProxyState>>, req: Request) -> Response {
     let (parts, body) = req.into_parts();
-    let body_bytes: Bytes = match axum::body::to_bytes(body, usize::MAX).await {
+    let body_bytes: Bytes = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("failed to read body: {e}")).into_response(),
+        Err(_) => return (StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response(),
     };
     handle_generic(state, parts.headers, body_bytes, "/v1/chat/completions", Provider::OpenAi, compress_openai_request_reported).await
 }

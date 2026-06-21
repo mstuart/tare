@@ -58,7 +58,7 @@ pub fn replace_is_lossless(
         SegmentAction::Replace { rendered, reconstruct, .. } => match reconstruct {
             Reconstruct::Delta { base } => match by_id.get(base) {
                 Some(base_seg) => apply_unified_diff(&base_seg.bytes, rendered)
-                    .map_or(false, |r| r == original.bytes),
+                    .is_some_and(|r| r == original.bytes),
                 None => false,
             },
             Reconstruct::JsonColumnar => match (

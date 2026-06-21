@@ -61,7 +61,7 @@ fn largest_array_path(v: &Value) -> Option<Vec<Seg>> {
     while let Some((path, node)) = stack.pop() {
         if is_crushable_array(node) {
             let size = node.to_string().len();
-            if best.as_ref().map_or(true, |(b, _)| size > *b) {
+            if best.as_ref().is_none_or(|(b, _)| size > *b) {
                 best = Some((size, path.clone()));
             }
         }

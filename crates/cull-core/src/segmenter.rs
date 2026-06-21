@@ -38,7 +38,6 @@ pub fn segment(blocks: &[RawBlock], counter: &dyn TokenCounter) -> Vec<Segment> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment::*;
     use cull_tokenize::ApproxCounter;
 
     fn raw(role: Role, kind: SegmentKind, text: &str) -> RawBlock {
