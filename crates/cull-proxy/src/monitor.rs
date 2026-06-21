@@ -31,6 +31,57 @@ impl HitRateMonitor {
     pub fn halted(&self) -> bool { self.halted }
 }
 
+/// Per-session OUTPUT-side monitor — the compression-paradox sensor (the signal the field ignores).
+///
+/// Aggressive INPUT compression can make a model *compensate with verbose OUTPUT* (the "verbosity
+/// compensation" effect): total session cost can rise even as input tokens fall. Every existing
+/// compressor optimizes input-tokens-removed and never looks at the output. This tracks each turn's
+/// output token count against a running EWMA baseline and flags a **verbosity spike** when output
+/// jumps well above baseline — the cue for the controller to BACK OFF compression instead of pushing
+/// it harder. It observes this turn and exposes state the next turn acts on (same cadence as
+/// [`HitRateMonitor`]). The spike→action policy lives in the controller, not here; this is the sensor.
+#[derive(Debug)]
+pub struct OutputMonitor {
+    baseline: Option<f64>, // EWMA of per-turn output tokens
+    spiking: bool,         // did the most recent observed turn spike vs baseline?
+    turns: u32,
+}
+
+/// EWMA smoothing for the output baseline (higher = more reactive to recent turns).
+const EWMA_ALPHA: f64 = 0.3;
+/// Output above `SPIKE_FACTOR × baseline` is treated as verbosity compensation.
+const SPIKE_FACTOR: f64 = 1.75;
+/// Observations needed before a baseline is trustworthy enough to flag a spike.
+const WARMUP_TURNS: u32 = 2;
+
+impl Default for OutputMonitor {
+    fn default() -> Self { Self { baseline: None, spiking: false, turns: 0 } }
+}
+
+impl OutputMonitor {
+    pub fn new() -> Self { Self::default() }
+
+    /// Record one turn's output token count. Returns `true` if it is a verbosity spike vs the
+    /// session baseline (after warmup). The baseline is then updated to include this turn.
+    pub fn observe(&mut self, output_tokens: u64) -> bool {
+        let o = output_tokens as f64;
+        let spike = matches!(self.baseline, Some(b) if self.turns >= WARMUP_TURNS && o > b * SPIKE_FACTOR);
+        self.baseline = Some(match self.baseline {
+            Some(b) => EWMA_ALPHA * o + (1.0 - EWMA_ALPHA) * b,
+            None => o,
+        });
+        self.turns += 1;
+        self.spiking = spike;
+        spike
+    }
+
+    /// Whether the most recently observed turn was a verbosity spike (read at the next turn).
+    pub fn spiking(&self) -> bool { self.spiking }
+
+    /// Current EWMA output baseline, if any turn has been observed.
+    pub fn baseline(&self) -> Option<f64> { self.baseline }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,5 +120,33 @@ mod tests {
         assert!(m.halted());
         m.observe(0.99);                          // recovery does not auto-resume (spec: halt + diagnose)
         assert!(m.halted());
+    }
+
+    #[test]
+    fn output_monitor_flags_verbosity_spike_after_warmup() {
+        let mut m = OutputMonitor::new();
+        assert!(!m.observe(100));  // warmup turn 1 — no baseline yet
+        assert!(!m.observe(120));  // warmup turn 2
+        assert!(!m.observe(110));  // normal turn, near baseline -> no spike
+        assert!(!m.spiking());
+        // a 4x jump in output is verbosity compensation -> spike
+        assert!(m.observe(420), "large output jump should flag a spike");
+        assert!(m.spiking());
+        assert!(m.baseline().is_some());
+    }
+
+    #[test]
+    fn output_monitor_no_spike_on_steady_output() {
+        let mut m = OutputMonitor::new();
+        for _ in 0..6 { assert!(!m.observe(200), "steady output never spikes"); }
+        assert!(!m.spiking());
+    }
+
+    #[test]
+    fn output_monitor_does_not_flag_during_warmup() {
+        let mut m = OutputMonitor::new();
+        // even a huge second turn can't spike before the baseline is trustworthy
+        assert!(!m.observe(10));
+        assert!(!m.observe(10_000));
     }
 }

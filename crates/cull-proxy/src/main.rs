@@ -13,6 +13,7 @@ async fn main() {
         upstream,
         opts: CompressOpts { enabled, recency_keep, min_savings: 0 },
         monitors: Default::default(),
+        outputs: Default::default(),
     });
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await.expect("bind");
