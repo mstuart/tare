@@ -1,4 +1,13 @@
 [package]
 name = "cull-cache"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+description = "Provider cache models and hit-rate floors for Cull's cache-correct compression."
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true

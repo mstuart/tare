@@ -1,7 +1,16 @@
 [package]
 name = "cull-core"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+description = "Core context-compression engine for Cull: lossless + opt-in lossy transforms and AST code skeletonization."
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [features]
 neural-embed = ["dep:fastembed", "dep:anyhow"]
