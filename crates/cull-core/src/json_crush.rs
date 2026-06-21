@@ -23,18 +23,25 @@ enum Seg {
 }
 
 fn path_to_json(path: &[Seg]) -> Value {
-    Value::Array(path.iter().map(|s| match s {
-        Seg::Key(k) => Value::String(k.clone()),
-        Seg::Idx(i) => Value::from(*i),
-    }).collect())
+    Value::Array(
+        path.iter()
+            .map(|s| match s {
+                Seg::Key(k) => Value::String(k.clone()),
+                Seg::Idx(i) => Value::from(*i),
+            })
+            .collect(),
+    )
 }
 
 fn path_from_json(v: &Value) -> Option<Vec<Seg>> {
-    v.as_array()?.iter().map(|seg| match seg {
-        Value::String(k) => Some(Seg::Key(k.clone())),
-        Value::Number(n) => n.as_u64().map(|i| Seg::Idx(i as usize)),
-        _ => None,
-    }).collect()
+    v.as_array()?
+        .iter()
+        .map(|seg| match seg {
+            Value::String(k) => Some(Seg::Key(k.clone())),
+            Value::Number(n) => n.as_u64().map(|i| Seg::Idx(i as usize)),
+            _ => None,
+        })
+        .collect()
 }
 
 fn get_mut<'a>(root: &'a mut Value, path: &[Seg]) -> Option<&'a mut Value> {
@@ -66,16 +73,20 @@ fn largest_array_path(v: &Value) -> Option<Vec<Seg>> {
             }
         }
         match node {
-            Value::Object(map) => for (k, child) in map {
-                let mut p = path.clone();
-                p.push(Seg::Key(k.clone()));
-                stack.push((p, child));
-            },
-            Value::Array(arr) => for (i, child) in arr.iter().enumerate() {
-                let mut p = path.clone();
-                p.push(Seg::Idx(i));
-                stack.push((p, child));
-            },
+            Value::Object(map) => {
+                for (k, child) in map {
+                    let mut p = path.clone();
+                    p.push(Seg::Key(k.clone()));
+                    stack.push((p, child));
+                }
+            }
+            Value::Array(arr) => {
+                for (i, child) in arr.iter().enumerate() {
+                    let mut p = path.clone();
+                    p.push(Seg::Idx(i));
+                    stack.push((p, child));
+                }
+            }
             _ => {}
         }
     }
@@ -90,7 +101,8 @@ fn encode_array(arr: &[Value]) -> Option<String> {
         return None;
     }
     // Modal key-signature: the most common ordered key vector.
-    let mut counts: std::collections::HashMap<Vec<String>, usize> = std::collections::HashMap::new();
+    let mut counts: std::collections::HashMap<Vec<String>, usize> =
+        std::collections::HashMap::new();
     for obj in arr {
         let keys: Vec<String> = obj.as_object().unwrap().keys().cloned().collect();
         *counts.entry(keys).or_insert(0) += 1;
@@ -105,8 +117,11 @@ fn encode_array(arr: &[Value]) -> Option<String> {
     };
 
     // Constant columns: modal keys whose value is identical across every modal row.
-    let modal_rows: Vec<&Map<String, Value>> =
-        arr.iter().filter(|o| is_modal(o)).map(|o| o.as_object().unwrap()).collect();
+    let modal_rows: Vec<&Map<String, Value>> = arr
+        .iter()
+        .filter(|o| is_modal(o))
+        .map(|o| o.as_object().unwrap())
+        .collect();
     let mut constants = Map::new();
     if modal_rows.len() >= 2 {
         for k in &modal {
@@ -116,7 +131,10 @@ fn encode_array(arr: &[Value]) -> Option<String> {
             }
         }
     }
-    let var_keys: Vec<&String> = modal.iter().filter(|k| !constants.contains_key(*k)).collect();
+    let var_keys: Vec<&String> = modal
+        .iter()
+        .filter(|k| !constants.contains_key(*k))
+        .collect();
 
     let mut body = serde_json::to_string(&var_keys).ok()?;
     body.push('\n');
@@ -138,7 +156,10 @@ fn encode_array(arr: &[Value]) -> Option<String> {
 fn decode_array(lines: &[&str]) -> Option<Value> {
     let mut it = lines.iter();
     let var_keys: Vec<String> = serde_json::from_str(it.next()?).ok()?;
-    let constants: Map<String, Value> = serde_json::from_str::<Value>(it.next()?).ok()?.as_object()?.clone();
+    let constants: Map<String, Value> = serde_json::from_str::<Value>(it.next()?)
+        .ok()?
+        .as_object()?
+        .clone();
     let mut out = Vec::new();
     for line in it {
         let v: Value = serde_json::from_str(line).ok()?;
@@ -178,20 +199,29 @@ pub fn crush(text: &str) -> Option<String> {
         let arr = {
             let mut cur = &value;
             for seg in &path {
-                cur = match seg { Seg::Key(k) => cur.get(k)?, Seg::Idx(i) => cur.get(i)? };
+                cur = match seg {
+                    Seg::Key(k) => cur.get(k)?,
+                    Seg::Idx(i) => cur.get(i)?,
+                };
             }
             cur.as_array()?.clone()
         };
         let body = encode_array(&arr)?;
         let mut skeleton = value.clone();
         *get_mut(&mut skeleton, &path)? = Value::Null;
-        format!("{MARKER2}{}\n{}\n{}",
+        format!(
+            "{MARKER2}{}\n{}\n{}",
             serde_json::to_string(&path_to_json(&path)).ok()?,
             serde_json::to_string(&skeleton).ok()?,
-            body)
+            body
+        )
     };
 
-    if out.len() < text.len() { Some(out) } else { None }
+    if out.len() < text.len() {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 /// Reverse [`crush`], returning the reconstructed JSON value (value-lossless).
@@ -245,15 +275,26 @@ mod tests {
     #[test]
     fn crushes_nested_array_in_wrapper() {
         // the common API shape: a wrapper object whose `data.results` holds the big array.
-        let items: Vec<Value> = (0..20).map(|i| serde_json::json!(
-            {"id":i,"name":format!("u{i}"),"role":"user","region":"us-east-1"})).collect();
+        let items: Vec<Value> = (0..20)
+            .map(|i| {
+                serde_json::json!(
+            {"id":i,"name":format!("u{i}"),"role":"user","region":"us-east-1"})
+            })
+            .collect();
         let text = pretty(serde_json::json!({
             "status":"success","page":1,"data":{"results":items,"count":20}
         }));
         let crushed = crush(&text).expect("nested array should crush");
-        assert!(crushed.starts_with(MARKER2), "uses nested marker: {}", &crushed[..20]);
+        assert!(
+            crushed.starts_with(MARKER2),
+            "uses nested marker: {}",
+            &crushed[..20]
+        );
         assert!(crushed.len() < text.len(), "smaller");
-        assert!(round_trips(&text, &crushed), "value-lossless nested round trip");
+        assert!(
+            round_trips(&text, &crushed),
+            "value-lossless nested round trip"
+        );
         // wrapper fields preserved
         assert!(crushed.contains("success") && crushed.contains("\"page\""));
     }
@@ -262,9 +303,14 @@ mod tests {
     fn factors_constant_column() {
         let text = serde_json::to_string(&serde_json::json!([
             {"id":0,"status":"healthy"},{"id":1,"status":"healthy"},{"id":2,"status":"healthy"}
-        ])).unwrap();
+        ]))
+        .unwrap();
         let crushed = crush(&text).expect("crush");
-        assert_eq!(crushed.matches("status").count(), 1, "constant emitted once: {crushed}");
+        assert_eq!(
+            crushed.matches("status").count(),
+            1,
+            "constant emitted once: {crushed}"
+        );
         assert!(round_trips(&text, &crushed));
     }
 

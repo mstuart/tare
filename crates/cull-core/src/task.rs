@@ -1,17 +1,27 @@
+use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
-use regex::Regex;
 
 /// The current task's technical symbols (function/type/file names, error codes, paths),
 /// lowercased. Drives query-conditioned passes. An empty signal means "no task" → query
 /// passes do nothing (safe default).
 #[derive(Debug, Clone, Default)]
-pub struct TaskSignal { pub symbols: HashSet<String> }
+pub struct TaskSignal {
+    pub symbols: HashSet<String>,
+}
 
 impl TaskSignal {
-    pub fn empty() -> Self { Self::default() }
-    pub fn from_text(text: &str) -> Self { Self { symbols: extract_symbols(text) } }
-    pub fn is_empty(&self) -> bool { self.symbols.is_empty() }
+    pub fn empty() -> Self {
+        Self::default()
+    }
+    pub fn from_text(text: &str) -> Self {
+        Self {
+            symbols: extract_symbols(text),
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty()
+    }
 }
 
 fn ident_re() -> &'static Regex {
@@ -22,9 +32,9 @@ fn ident_re() -> &'static Regex {
 
 fn is_stopword(s: &str) -> bool {
     const STOP: &[&str] = &[
-        "the","and","for","this","that","with","from","into","not","but","all","can","you","are",
-        "let","pub","use","mut","self","return","const","fix","add","make","get","set","new","out",
-        "the.","src","run","why","how","fn.","ref",
+        "the", "and", "for", "this", "that", "with", "from", "into", "not", "but", "all", "can",
+        "you", "are", "let", "pub", "use", "mut", "self", "return", "const", "fix", "add", "make",
+        "get", "set", "new", "out", "the.", "src", "run", "why", "how", "fn.", "ref",
     ];
     STOP.contains(&s)
 }
@@ -32,7 +42,8 @@ fn is_stopword(s: &str) -> bool {
 /// Extract candidate technical symbols, lowercased, length >= 3, minus common stopwords.
 /// Heuristic relevance signal; tree-sitter precision and embedding salience are later upgrades.
 pub fn extract_symbols(text: &str) -> HashSet<String> {
-    ident_re().find_iter(text)
+    ident_re()
+        .find_iter(text)
         .map(|m| m.as_str().to_ascii_lowercase())
         .filter(|s| s.len() >= 3 && !is_stopword(s))
         .collect()

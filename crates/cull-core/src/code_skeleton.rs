@@ -24,7 +24,7 @@ const FUNCTION_KINDS: &[&str] = &[
     "method_declaration",             // go, ts interfaces
     "arrow_function",                 // js/ts
     "function_expression",            // js
-    "generator_function",            // js
+    "generator_function",             // js
     "generator_function_declaration", // js
     "closure_expression",             // rust closures `|..| { .. }`
 ];
@@ -48,7 +48,9 @@ pub fn skeletonize(text: &str, path: &str) -> Option<String> {
     let mut stack = vec![tree.root_node()];
     while let Some(node) = stack.pop() {
         let is_fn_body = BODY_KINDS.contains(&node.kind())
-            && node.parent().is_some_and(|p| FUNCTION_KINDS.contains(&p.kind()));
+            && node
+                .parent()
+                .is_some_and(|p| FUNCTION_KINDS.contains(&p.kind()));
         if is_fn_body {
             let (s, e) = (node.start_byte(), node.end_byte());
             if text[s..e].bytes().filter(|&b| b == b'\n').count() + 1 >= MIN_BODY_LINES {
@@ -106,8 +108,14 @@ pub fn skeletonize(text: &str, path: &str) -> Option<String> {
     // If the file didn't fully parse, flag it: some bodies were kept for a structural reason
     // (incomplete parse), not because they were trivial — the agent shouldn't trust them as stubs.
     if had_errors {
-        let cmt = if path.rsplit('.').next() == Some("py") { "#" } else { "//" };
-        return Some(format!("{cmt} [cull: parse errors; skeleton may be incomplete]\n{out}"));
+        let cmt = if path.rsplit('.').next() == Some("py") {
+            "#"
+        } else {
+            "//"
+        };
+        return Some(format!(
+            "{cmt} [cull: parse errors; skeleton may be incomplete]\n{out}"
+        ));
     }
     Some(out)
 }
@@ -140,7 +148,10 @@ pub fn verify_token(input: AuthToken) -> Result<Claims> {
         // dropped: body internals + elision marker present
         assert!(!out.contains("decode_jwt"), "body should be elided: {out}");
         // accurate hidden-line count (3 interior statements) + greppable sentinel
-        assert!(out.contains("cull: 3 lines hidden"), "accurate sentinel marker: {out}");
+        assert!(
+            out.contains("cull: 3 lines hidden"),
+            "accurate sentinel marker: {out}"
+        );
     }
 
     #[test]
@@ -159,7 +170,10 @@ class Service:
         assert!(out.contains("class Service:"));
         assert!(out.contains("def authenticate(self, user):"));
         assert!(!out.contains("verify_password"), "body elided: {out}");
-        assert!(out.contains("# cull:") && out.contains("lines hidden"), "python sentinel marker: {out}");
+        assert!(
+            out.contains("# cull:") && out.contains("lines hidden"),
+            "python sentinel marker: {out}"
+        );
     }
 
     #[test]
@@ -177,7 +191,10 @@ export function loadUser(id: number): User {
         assert!(out.contains("export interface User { id: number; name: string; }"));
         assert!(out.contains("export function loadUser(id: number): User"));
         assert!(!out.contains("db.query"), "body elided: {out}");
-        assert!(out.contains("cull: 3 lines hidden"), "accurate count for TS: {out}");
+        assert!(
+            out.contains("cull: 3 lines hidden"),
+            "accurate count for TS: {out}"
+        );
     }
 
     #[test]
@@ -195,7 +212,10 @@ func Add(a int, b int) int {
         assert!(out.contains("package main"));
         assert!(out.contains("func Add(a int, b int) int"));
         assert!(!out.contains("logResult"), "body elided: {out}");
-        assert!(out.contains("cull: 3 lines hidden"), "accurate count for Go: {out}");
+        assert!(
+            out.contains("cull: 3 lines hidden"),
+            "accurate count for Go: {out}"
+        );
     }
 
     #[test]
@@ -224,6 +244,9 @@ func Add(a int, b int) int {
         // one valid fn (elidable) + one truncated fn (missing close brace) -> file has parse errors
         let src = "fn ok() -> i32 {\n    let a = 1;\n    let b = 2;\n    a + b\n}\nfn broken() -> i32 {\n    let z = 1\n";
         let out = skeletonize(src, "b.rs").expect("elides the valid fn");
-        assert!(out.contains("[cull: parse errors"), "warns about incomplete parse: {out}");
+        assert!(
+            out.contains("[cull: parse errors"),
+            "warns about incomplete parse: {out}"
+        );
     }
 }
