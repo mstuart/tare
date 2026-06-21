@@ -36,40 +36,83 @@ fn modal_keys(arr: &[Value]) -> Vec<String> {
     counts.into_iter().max_by_key(|(_, c)| *c).map(|(k, _)| k).unwrap_or_default()
 }
 
-/// Aggressively (lossily) compact `text`: a JSON array of objects, or — failing that — repetitive
-/// line-based content (logs, tabular command output). Returns `None` if not worth it / not smaller.
-pub fn compact(text: &str, boundary: usize) -> Option<String> {
+/// Aggressively (lossily) compact `text`: a JSON array of objects, or — failing that — line-based
+/// (logs, tabular commands) or sentence-based (prose) content. When `task` is given, units relevant
+/// to the task (sharing a task symbol) are always kept — query-aware pruning, which base LLMLingua-2
+/// (query-agnostic) does not do. Returns `None` if not worth it / not smaller.
+pub fn compact(text: &str, boundary: usize, task: Option<&str>) -> Option<String> {
+    let syms = task.map(crate::task::extract_symbols).unwrap_or_default();
     match serde_json::from_str::<Value>(text) {
-        Ok(v) if v.is_array() => compact_json_array(&v, boundary).or_else(|| compact_lines(text, boundary)),
-        _ => compact_lines(text, boundary),
+        Ok(v) if v.is_array() => compact_json_array(&v, boundary, &syms).or_else(|| compact_text(text, boundary, &syms)),
+        _ => compact_text(text, boundary, &syms),
     }
 }
 
-/// Line-based lossy compaction: keep the first/last `boundary` lines and any line containing an
-/// alert keyword; drop the uniform bulk with an explicit marker. Byte-structure-agnostic, so it
-/// handles logs and tabular command output (`ps aux`, `ls -la`, …).
-fn compact_lines(text: &str, boundary: usize) -> Option<String> {
-    let lines: Vec<&str> = text.split('\n').collect();
-    let n = lines.len();
+type Syms = std::collections::HashSet<String>;
+
+fn relevant(unit: &str, syms: &Syms) -> bool {
+    if syms.is_empty() {
+        return false;
+    }
+    let l = unit.to_ascii_lowercase();
+    syms.iter().any(|s| l.contains(s.as_str()))
+}
+
+/// Split prose into sentences, each slice keeping its terminal `.`/`!`/`?` (lossy-join safe).
+fn split_sentences(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    for i in 0..bytes.len() {
+        let end = matches!(bytes[i], b'.' | b'!' | b'?') && (i + 1 >= bytes.len() || bytes[i + 1] == b' ' || bytes[i + 1] == b'\n');
+        if end {
+            out.push(text[start..=i].trim_start());
+            start = i + 1;
+        }
+    }
+    if start < text.len() {
+        let tail = text[start..].trim_start();
+        if !tail.is_empty() {
+            out.push(tail);
+        }
+    }
+    out
+}
+
+/// Lossy compaction of free text: line units (logs/tables) when multi-line, else sentence units
+/// (prose). Keeps the first/last `boundary` units, any unit with an alert keyword, and any unit
+/// relevant to the task; drops the rest with an explicit marker.
+fn compact_text(text: &str, boundary: usize, syms: &Syms) -> Option<String> {
+    let multiline = text.matches('\n').count() >= 4;
+    let (units, joiner, label): (Vec<&str>, &str, &str) = if multiline {
+        (text.split('\n').collect(), "\n", "lines")
+    } else {
+        (split_sentences(text), " ", "sentences")
+    };
+    let n = units.len();
     if n <= 2 * boundary + 4 {
         return None;
     }
     let mut keep = vec![false; n];
     for k in keep.iter_mut().take(boundary.min(n)) { *k = true; }
     for k in keep.iter_mut().skip(n.saturating_sub(boundary)) { *k = true; }
-    for (i, line) in lines.iter().enumerate() {
-        let l = line.to_ascii_lowercase();
-        if ALERTS.iter().any(|a| l.contains(a)) { keep[i] = true; }
+    for (i, u) in units.iter().enumerate() {
+        let l = u.to_ascii_lowercase();
+        if ALERTS.iter().any(|a| l.contains(a)) || relevant(u, syms) {
+            keep[i] = true;
+        }
     }
-    let kept: Vec<&str> = lines.iter().zip(&keep).filter(|(_, k)| **k).map(|(l, _)| *l).collect();
+    let kept: Vec<&str> = units.iter().zip(&keep).filter(|(_, k)| **k).map(|(u, _)| *u).collect();
     let dropped = n - kept.len();
-    if dropped == 0 { return None; }
-    let out = format!("{}\n[cull-lossy: {dropped} of {n} uniform lines elided; kept boundary+alerts]",
-        kept.join("\n"));
+    if dropped == 0 {
+        return None;
+    }
+    let out = format!("{}\n[cull-lossy: {dropped} of {n} {label} elided; kept boundary+alerts+relevant]",
+        kept.join(joiner));
     if out.len() < text.len() { Some(out) } else { None }
 }
 
-fn compact_json_array(value: &Value, boundary: usize) -> Option<String> {
+fn compact_json_array(value: &Value, boundary: usize, syms: &Syms) -> Option<String> {
     let arr = value.as_array()?;
     let n = arr.len();
     if n <= 2 * boundary + 2 || !arr.iter().all(Value::is_object) {
@@ -86,7 +129,7 @@ fn compact_json_array(value: &Value, boundary: usize) -> Option<String> {
         *k = true;
     }
     for (i, row) in arr.iter().enumerate() {
-        if is_anomaly(row, &modal) {
+        if is_anomaly(row, &modal) || relevant(&row.to_string(), syms) {
             keep[i] = true;
         }
     }
@@ -124,7 +167,7 @@ mod tests {
             {"id":i,"name":format!("u{i}"),"status":"ok"})).collect();
         rows[50] = serde_json::json!({"id":50,"name":"u50","status":"critical","error":"ERR_X"});
         let text = serde_json::to_string(&Value::Array(rows)).unwrap();
-        let out = compact(&text, 3).expect("should compact");
+        let out = compact(&text, 3, None).expect("should compact");
         assert!(out.len() < text.len());
         // anomaly kept
         assert!(out.contains("ERR_X") && out.contains("critical"));
@@ -138,6 +181,6 @@ mod tests {
     #[test]
     fn refuses_small_arrays() {
         let text = serde_json::to_string(&serde_json::json!([{"a":1},{"a":2},{"a":3}])).unwrap();
-        assert!(compact(&text, 3).is_none());
+        assert!(compact(&text, 3, None).is_none());
     }
 }
