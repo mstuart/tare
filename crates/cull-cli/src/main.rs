@@ -46,6 +46,15 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         max_rows: usize,
     },
+    /// Opt-in LOSSY code skeletonization (read source on stdin): drop function/method bodies, keep
+    /// signatures, types, fields, imports, and doc comments — the structure an agent navigates by.
+    /// Code reads are ~67-76% of coding-agent tokens; reversible by re-reading. Passthrough if the
+    /// language is unknown or nothing is elidable.
+    Skeletonize {
+        /// File path, used for language detection (.rs/.py/.js/.ts/.tsx/.go).
+        #[arg(long)]
+        path: String,
+    },
 }
 
 fn main() {
@@ -93,6 +102,15 @@ fn main() {
             }
             let t = if task.is_empty() { None } else { Some(task.as_str()) };
             let out = cull_core::lossy_compact::compact_opts(&input, boundary, t, max_field, max_rows).unwrap_or(input);
+            println!("{out}");
+        }
+        Command::Skeletonize { path } => {
+            let mut input = String::new();
+            if std::io::stdin().read_to_string(&mut input).is_err() {
+                eprintln!("error: failed to read stdin");
+                std::process::exit(1);
+            }
+            let out = cull_core::code_skeleton::skeletonize(&input, &path).unwrap_or(input);
             println!("{out}");
         }
     }
