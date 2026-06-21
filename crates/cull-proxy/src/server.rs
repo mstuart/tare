@@ -100,8 +100,9 @@ fn hit_rate(read: u64, creation: u64) -> Option<f64> {
     if denom == 0 { None } else { Some(read as f64 / denom as f64) }
 }
 
-const USAGE_SCAN_CAP: usize = 2 * 1024 * 1024; // 2 MB best-effort scan window (fail-safe)
-const CONTEXT_WINDOW_TOKENS: f64 = 200_000.0; // tunable model-window estimate for the fill ratio
+const USAGE_SCAN_CAP: usize = 2 * 1024 * 1024; // 2 MB head scan window (message_start cache usage)
+const TAIL_SCAN_CAP: usize = 64 * 1024; // rolling tail window — the final usage event (output_tokens)
+const CONTEXT_WINDOW_TOKENS: f64 = 200_000.0; // default model-window estimate; override via CULL_CONTEXT_LIMIT
 
 async fn handle_generic(
     state: Arc<ProxyState>,
@@ -125,12 +126,18 @@ async fn handle_generic(
         Some(id) => state.outputs.lock().ok().and_then(|m| m.get(&id).map(|x| x.spiking())).unwrap_or(false),
         None => false,
     };
-    // Context-fill signal: approximate input-token saturation of the model window. As it fills the
-    // controller compresses MORE (context-rot defense); a verbosity spike pulls aggression back.
+    // Context-fill signal: approximate input-token saturation of the model window. Conservative — it
+    // counts the serialized request (incl. JSON envelope), slightly OVER-estimating true fill, which
+    // errs toward compressing sooner. Window tunable via CULL_CONTEXT_LIMIT (default 200k; set lower
+    // for smaller-window models). As it fills the controller compresses MORE; a verbosity spike pulls
+    // aggression back. When the session is halted, the dial is the default no-op (passthrough below).
+    let window = std::env::var("CULL_CONTEXT_LIMIT").ok()
+        .and_then(|v| v.parse::<f64>().ok()).filter(|&w| w > 0.0)
+        .unwrap_or(CONTEXT_WINDOW_TOKENS);
     let fill = parsed.as_ref()
-        .map(|v| ApproxCounter::o200k().count(&v.to_string()) as f64 / CONTEXT_WINDOW_TOKENS)
+        .map(|v| ApproxCounter::o200k().count(&v.to_string()) as f64 / window)
         .unwrap_or(0.0);
-    let aggr = controller(spiking, fill);
+    let aggr = if halted { Aggression::default() } else { controller(spiking, fill) };
 
     let (forward_body, report) = match (&parsed, halted) {
         (Some(req_json), false) => {
@@ -171,27 +178,35 @@ async fn handle_generic(
                 else if aggr.recency_keep.is_some() { "tighten" } else { "default" };
             builder = builder.header("x-cull-aggression", aggr_label);
 
-            // Tee: forward every chunk bit-exact while accumulating a capped copy to read `usage`.
+            // Tee: forward every chunk bit-exact while accumulating (a) a HEAD copy (cache usage in
+            // the streaming `message_start`) and (b) a rolling TAIL (the final usage event carrying
+            // `output_tokens`, which a head-only cap would miss on >2 MB responses, e.g. long
+            // thinking). Both keys are scanned in head OR tail so non-streaming bodies work too.
             let state_tee = Arc::clone(&state);
             let upstream_stream = resp.bytes_stream();
             let body = Body::from_stream(async_stream::stream! {
-                let mut buf: Vec<u8> = Vec::new();
+                let mut head: Vec<u8> = Vec::new();
+                let mut tail: Vec<u8> = Vec::new();
                 futures_util::pin_mut!(upstream_stream);
                 while let Some(item) = upstream_stream.next().await {
                     if let Ok(chunk) = &item {
-                        if buf.len() < USAGE_SCAN_CAP { buf.extend_from_slice(chunk); }
+                        if head.len() < USAGE_SCAN_CAP { head.extend_from_slice(chunk); }
+                        tail.extend_from_slice(chunk);
+                        if tail.len() > TAIL_SCAN_CAP { tail.drain(0..tail.len() - TAIL_SCAN_CAP); }
                     }
                     yield item;
                 }
-                if let (Some(id), Some((read, creation))) = (sid, parse_anthropic_usage(&buf)) {
+                let cache = parse_anthropic_usage(&head).or_else(|| parse_anthropic_usage(&tail));
+                if let (Some(id), Some((read, creation))) = (sid, cache) {
                     if let Some(h) = hit_rate(read, creation) {
                         if let Ok(mut map) = state_tee.monitors.lock() {
                             map.entry(id).or_insert_with(|| HitRateMonitor::new(provider)).observe(h);
                         }
                     }
                 }
-                // Output-side sensor: record this turn's output tokens (compression-paradox signal).
-                if let (Some(id), Some(out_tok)) = (sid, parse_output_tokens(&buf, provider)) {
+                // Output-side sensor (compression-paradox): output_tokens land in the FINAL event.
+                let out_tok = parse_output_tokens(&tail, provider).or_else(|| parse_output_tokens(&head, provider));
+                if let (Some(id), Some(out_tok)) = (sid, out_tok) {
                     if let Ok(mut map) = state_tee.outputs.lock() {
                         map.entry(id).or_default().observe(out_tok);
                     }
