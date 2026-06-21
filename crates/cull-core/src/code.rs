@@ -1,6 +1,6 @@
+use crate::task::extract_symbols;
 use std::collections::HashSet;
 use tree_sitter::{Language, Parser};
-use crate::task::extract_symbols;
 
 pub(crate) fn lang_for_path(path: &str) -> Option<Language> {
     let ext = path.rsplit('.').next()?;
@@ -19,18 +19,26 @@ pub(crate) fn lang_for_path(path: &str) -> Option<Language> {
 /// Collect the text of every named node whose kind contains "identifier" (cross-language).
 fn ts_symbols(text: &str, lang: Language) -> HashSet<String> {
     let mut parser = Parser::new();
-    if parser.set_language(&lang).is_err() { return HashSet::new(); }
-    let Some(tree) = parser.parse(text, None) else { return HashSet::new(); };
+    if parser.set_language(&lang).is_err() {
+        return HashSet::new();
+    }
+    let Some(tree) = parser.parse(text, None) else {
+        return HashSet::new();
+    };
     let mut out = HashSet::new();
     let mut stack = vec![tree.root_node()];
     while let Some(node) = stack.pop() {
         if node.is_named() && node.kind().contains("identifier") {
             if let Ok(s) = node.utf8_text(text.as_bytes()) {
-                if s.len() >= 3 { out.insert(s.to_ascii_lowercase()); }
+                if s.len() >= 3 {
+                    out.insert(s.to_ascii_lowercase());
+                }
             }
         }
         let mut c = node.walk();
-        for child in node.children(&mut c) { stack.push(child); }
+        for child in node.children(&mut c) {
+            stack.push(child);
+        }
     }
     out
 }
@@ -40,7 +48,9 @@ pub fn extract_symbols_for(text: &str, path: Option<&str>) -> HashSet<String> {
     if let Some(p) = path {
         if let Some(lang) = lang_for_path(p) {
             let syms = ts_symbols(text, lang);
-            if !syms.is_empty() { return syms; }
+            if !syms.is_empty() {
+                return syms;
+            }
         }
     }
     extract_symbols(text)

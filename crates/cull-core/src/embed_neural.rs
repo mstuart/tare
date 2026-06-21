@@ -24,10 +24,11 @@ impl FastEmbedder {
     /// Construct a `FastEmbedder` using `BGESmallENV15` (384-dim, ~33 MB).
     /// Downloads the model if not already cached.
     pub fn new() -> Result<Self> {
-        let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::BGESmallENV15),
-        )?;
-        Ok(Self { model: Mutex::new(model), dim: 384 })
+        let model = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGESmallENV15))?;
+        Ok(Self {
+            model: Mutex::new(model),
+            dim: 384,
+        })
     }
 }
 

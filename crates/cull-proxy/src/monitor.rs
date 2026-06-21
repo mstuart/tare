@@ -15,20 +15,28 @@ pub struct HitRateMonitor {
 
 impl HitRateMonitor {
     pub fn new(provider: Provider) -> Self {
-        Self { floor: CacheModel::for_provider(provider).hit_rate_floor(), consecutive_below: 0, halted: false }
+        Self {
+            floor: CacheModel::for_provider(provider).hit_rate_floor(),
+            consecutive_below: 0,
+            halted: false,
+        }
     }
 
     /// Record one turn's observed hit rate.
     pub fn observe(&mut self, hit_rate: f64) {
         if hit_rate < self.floor {
             self.consecutive_below += 1;
-            if self.consecutive_below >= HALT_STREAK { self.halted = true; }
+            if self.consecutive_below >= HALT_STREAK {
+                self.halted = true;
+            }
         } else {
             self.consecutive_below = 0;
         }
     }
 
-    pub fn halted(&self) -> bool { self.halted }
+    pub fn halted(&self) -> bool {
+        self.halted
+    }
 }
 
 /// Per-session OUTPUT-side monitor — the compression-paradox sensor (the signal the field ignores).
@@ -42,8 +50,8 @@ impl HitRateMonitor {
 /// [`HitRateMonitor`]). The spike→action policy lives in the controller, not here; this is the sensor.
 #[derive(Debug, Default)]
 pub struct OutputMonitor {
-    baseline: Option<f64>,   // EWMA of per-turn output tokens
-    spiking: bool,           // is the session currently in verbosity back-off?
+    baseline: Option<f64>, // EWMA of per-turn output tokens
+    spiking: bool,         // is the session currently in verbosity back-off?
     turns: u32,
     consecutive_spikes: u32, // run length of above-threshold turns (bounds the back-off)
 }
@@ -60,7 +68,9 @@ const WARMUP_TURNS: u32 = 2;
 const SPIKE_ADAPT_LIMIT: u32 = 5;
 
 impl OutputMonitor {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Record one turn's output token count. Returns `true` while the session is in verbosity
     /// back-off. A spike turn is NOT folded into the baseline (else a model stuck in verbosity-
@@ -69,7 +79,8 @@ impl OutputMonitor {
     /// re-baseline and release back-off rather than stay conservative forever.
     pub fn observe(&mut self, output_tokens: u64) -> bool {
         let o = output_tokens as f64;
-        let over = matches!(self.baseline, Some(b) if self.turns >= WARMUP_TURNS && o > b * SPIKE_FACTOR);
+        let over =
+            matches!(self.baseline, Some(b) if self.turns >= WARMUP_TURNS && o > b * SPIKE_FACTOR);
         self.consecutive_spikes = if over { self.consecutive_spikes + 1 } else { 0 };
         let adapting_shift = over && self.consecutive_spikes >= SPIKE_ADAPT_LIMIT;
         if !over || adapting_shift {
@@ -85,10 +96,14 @@ impl OutputMonitor {
     }
 
     /// Whether the most recently observed turn was a verbosity spike (read at the next turn).
-    pub fn spiking(&self) -> bool { self.spiking }
+    pub fn spiking(&self) -> bool {
+        self.spiking
+    }
 
     /// Current EWMA output baseline, if any turn has been observed.
-    pub fn baseline(&self) -> Option<f64> { self.baseline }
+    pub fn baseline(&self) -> Option<f64> {
+        self.baseline
+    }
 }
 
 #[cfg(test)]
@@ -100,43 +115,51 @@ mod tests {
     fn halts_after_three_consecutive_below_floor() {
         let mut m = HitRateMonitor::new(Provider::Anthropic5m); // floor ~0.217
         assert!(!m.halted());
-        m.observe(0.0); assert!(!m.halted());   // 1 below
-        m.observe(0.1); assert!(!m.halted());   // 2 below
-        m.observe(0.05);                          // 3 below -> halt
+        m.observe(0.0);
+        assert!(!m.halted()); // 1 below
+        m.observe(0.1);
+        assert!(!m.halted()); // 2 below
+        m.observe(0.05); // 3 below -> halt
         assert!(m.halted());
     }
 
     #[test]
     fn a_hit_resets_the_streak() {
         let mut m = HitRateMonitor::new(Provider::Anthropic5m);
-        m.observe(0.0); m.observe(0.0);          // 2 below
-        m.observe(0.9);                           // a hit resets
-        m.observe(0.0); m.observe(0.0);          // 2 below again
-        assert!(!m.halted());                     // never hit 3 consecutive
+        m.observe(0.0);
+        m.observe(0.0); // 2 below
+        m.observe(0.9); // a hit resets
+        m.observe(0.0);
+        m.observe(0.0); // 2 below again
+        assert!(!m.halted()); // never hit 3 consecutive
     }
 
     #[test]
     fn openai_floor_zero_never_halts_on_positive_rate() {
         let mut m = HitRateMonitor::new(Provider::OpenAi); // floor 0
-        for _ in 0..10 { m.observe(0.0001); }
-        assert!(!m.halted());                     // 0.0001 is NOT below a 0 floor
+        for _ in 0..10 {
+            m.observe(0.0001);
+        }
+        assert!(!m.halted()); // 0.0001 is NOT below a 0 floor
     }
 
     #[test]
     fn stays_halted_once_tripped() {
         let mut m = HitRateMonitor::new(Provider::Anthropic5m);
-        m.observe(0.0); m.observe(0.0); m.observe(0.0);
+        m.observe(0.0);
+        m.observe(0.0);
+        m.observe(0.0);
         assert!(m.halted());
-        m.observe(0.99);                          // recovery does not auto-resume (spec: halt + diagnose)
+        m.observe(0.99); // recovery does not auto-resume (spec: halt + diagnose)
         assert!(m.halted());
     }
 
     #[test]
     fn output_monitor_flags_verbosity_spike_after_warmup() {
         let mut m = OutputMonitor::new();
-        assert!(!m.observe(100));  // warmup turn 1 — no baseline yet
-        assert!(!m.observe(120));  // warmup turn 2
-        assert!(!m.observe(110));  // normal turn, near baseline -> no spike
+        assert!(!m.observe(100)); // warmup turn 1 — no baseline yet
+        assert!(!m.observe(120)); // warmup turn 2
+        assert!(!m.observe(110)); // normal turn, near baseline -> no spike
         assert!(!m.spiking());
         // a 4x jump in output is verbosity compensation -> spike
         assert!(m.observe(420), "large output jump should flag a spike");
@@ -147,7 +170,9 @@ mod tests {
     #[test]
     fn output_monitor_no_spike_on_steady_output() {
         let mut m = OutputMonitor::new();
-        for _ in 0..6 { assert!(!m.observe(200), "steady output never spikes"); }
+        for _ in 0..6 {
+            assert!(!m.observe(200), "steady output never spikes");
+        }
         assert!(!m.spiking());
     }
 
@@ -167,7 +192,10 @@ mod tests {
         m.observe(100);
         m.observe(100); // baseline ~100
         assert!(m.observe(400), "first high turn spikes");
-        assert!(m.observe(400), "sustained high output STILL spikes (baseline not inflated)");
+        assert!(
+            m.observe(400),
+            "sustained high output STILL spikes (baseline not inflated)"
+        );
         assert!(m.observe(400), "and keeps spiking");
         // once output returns to normal, the baseline resumes and the spike clears
         assert!(!m.observe(100));
@@ -182,10 +210,18 @@ mod tests {
         m.observe(100); // baseline ~100
         let mut active = 0;
         for _ in 0..10 {
-            if m.observe(400) { active += 1; }
+            if m.observe(400) {
+                active += 1;
+            }
         }
         assert!(active >= 1, "transient verbosity backs off at least once");
-        assert!(active <= SPIKE_ADAPT_LIMIT, "back-off is bounded, not forever (got {active})");
-        assert!(!m.spiking(), "after a sustained shift the baseline adapts and back-off releases");
+        assert!(
+            active <= SPIKE_ADAPT_LIMIT,
+            "back-off is bounded, not forever (got {active})"
+        );
+        assert!(
+            !m.spiking(),
+            "after a sustained shift the baseline adapts and back-off releases"
+        );
     }
 }
