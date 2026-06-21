@@ -98,7 +98,8 @@ Competitive harnesses live in `crates/cull-bench/benchmarks/` (`headroom_vs_cull
 `qa_accuracy_4way.py`, `real_trace_corpus.py`, `answer_equivalence.py`). They require the competitor
 tools installed. On those benchmarks, **at equal fidelity** Cull matches or beats Headroom
 (SmartCrusher), RTK, LLMLingua-2, and lean-ctx on every content type — and is the only one with a
-lossless mode and cross-turn dedup. See `docs/superpowers/COMPLETENESS.md` for the full record.
+lossless mode and cross-turn dedup. The harnesses in `crates/cull-bench/benchmarks/` are the
+reproducible source of those claims.
 
 ## Architecture
 
