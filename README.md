@@ -1,105 +1,160 @@
-# cull
+<div align="center"><pre>
+ ██████╗██╗   ██╗██╗     ██╗
+██╔════╝██║   ██║██║     ██║
+██║     ██║   ██║██║     ██║
+██║     ██║   ██║██║     ██║
+╚██████╗╚██████╔╝███████╗███████╗
+ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝
+     Lossless-by-default context compression for LLM coding agents
+</pre></div>
 
-**Query-aware, cache-correct, lossless-by-default context compression for LLM coding agents.**
+<p align="center"><strong>lossless by default · query-aware · cache-correct · closed-loop · proxy · library · CLI · local</strong></p>
 
-Cull sits between an agent and the model API and shrinks the context window. Unlike most
-compressors it is **lossless by default**, **cache-correct** (it never rewrites the provider's cached
-prefix), and **closed-loop** — it watches the model's *output* and adapts. When you opt in, it also
-compresses aggressively (row-capping, field-truncation, telegraphic NL, and AST code skeletonization).
+<p align="center">
+  <a href="https://github.com/mstuart/cull/actions/workflows/ci.yml"><img src="https://github.com/mstuart/cull/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/rust-1.82%2B-orange.svg" alt="Rust 1.82+">
+  <img src="https://img.shields.io/badge/status-pre--1.0-yellow.svg" alt="pre-1.0">
+</p>
 
-> **Status: pre-1.0, not yet production-hardened.** The engine is well-tested (154 tests) and beats
-> incumbents on the included benchmarks, but it has not been run against a live model API and has
-> rough edges listed under [Status & limitations](#status--limitations). Read that section before
-> deploying.
+<p align="center">
+  <a href="#get-started-60-seconds">Install</a> ·
+  <a href="#how-it-works-30-seconds">How it works</a> ·
+  <a href="#proof">Proof</a> ·
+  <a href="#compared-to">Compared to</a> ·
+  <a href="#when-to-use--when-to-skip">When to use</a> ·
+  <a href="#status--limitations">Status</a>
+</p>
 
 ---
 
+cull sits between an agent and the model API and shrinks the context window. Unlike most compressors
+it is **lossless by default**, **cache-correct** (it never rewrites the provider's cached prefix), and
+**closed-loop** — it watches the model's *output* and adapts. Opt in and it compresses aggressively:
+row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
+
+> **Status: pre-1.0, not yet exercised against a live model API.** The engine is well-tested (154
+> tests) and beats incumbents on the included benchmarks, but read [Status & limitations](#status--limitations)
+> before deploying.
+
+## What it does
+
+- **Proxy** — `cull-proxy`, point your agent's base URL at it; zero code changes, any language.
+- **Library** — call the `cull-core` engine directly from Rust.
+- **CLI** — `cull compress | slim-schema | compact-lossy | skeletonize` for one-shot transforms.
+- **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
+  it only drops information when you explicitly opt in.
+- **Cache-correct** — detects the provider's cache breakpoint and only compresses the dynamic suffix,
+  so your 90%-discount prefix cache keeps hitting.
+- **Closed-loop** — watches output verbosity (the *compression paradox*), context fill, and cache
+  hit-rate, and dials compression up or down per session.
+
 ## Why
 
-Most context compressors optimize one number — *input tokens removed* — one-way and blind. Cull's
-design rests on three observations the research bears out:
-
 - **Lossless wins where it can.** Tool output, logs, and JSON re-encode losslessly into a far denser
-  form; only drop information when the caller explicitly accepts it.
-- **The cache is the economy.** Provider prefix caches discount cached tokens ~10×. A compressor that
-  perturbs the cached prefix turns a 90% discount into 0%. Cull only ever rewrites the *dynamic
-  suffix* after the cache breakpoint.
+  form; only drop information when the caller accepts it.
+- **The cache is the economy.** Provider prefix caches discount cached tokens ~10×. Perturb the
+  cached prefix and a 90% discount becomes 0%. cull only ever rewrites the dynamic suffix.
 - **Compression has a feedback loop.** Over-compressing makes models *compensate with verbose
-  output*, so total cost can rise even as input falls. Cull is the only proxy that watches output
-  verbosity and backs off.
+  output*, so total cost can rise even as input falls. cull is the only proxy that watches output and
+  backs off.
 
-## Install
+## How it works (30 seconds)
 
-```bash
-git clone <your-fork>/cull && cd cull
-cargo build --release            # builds `cull` (CLI) and `cull-proxy`
+```
+ Your agent / app  (Claude Code, Cursor, Codex, your own loop…)
+      │  prompts · tool outputs · logs · file reads · RAG results
+      ▼
+  ┌──────────────────────────────────────────────────────────┐
+  │  cull   (runs locally — your data and API key stay here)  │
+  │  ──────────────────────────────────────────────────────  │
+  │  cache-boundary detect → only touch the dynamic suffix    │
+  │  lossless passes:  supersession · IVM/delta · dedup ·     │
+  │                    columnar JSON/log · schema-slim ·      │
+  │                    query-relevance                        │
+  │  opt-in lossy:     row-cap · field-truncate · telegraphic │
+  │                    · AST code skeletonization             │
+  │  closed-loop controller:  cache-hit-rate (halt) ·         │
+  │                    output-verbosity (back off) ·          │
+  │                    context-fill (compress harder)         │
+  └──────────────────────────────────────────────────────────┘
+      │  compressed request                ▲  response streamed back unchanged
+      ▼                                     │  (output tokens observed for the loop)
+ LLM provider  (Anthropic /v1/messages · OpenAI /v1/chat/completions)
 ```
 
-Binaries land in `target/release/{cull,cull-proxy}`.
-
-## Quick start
-
-### As a proxy (transparent, recommended)
-
-Point your agent's API base URL at Cull; it forwards to the real upstream and compresses on the way.
+## Get started (60 seconds)
 
 ```bash
-CULL_UPSTREAM=https://api.anthropic.com CULL_PORT=8787 ./target/release/cull-proxy
-# then set your agent's base URL to http://localhost:8787
+# 1 — build
+git clone https://github.com/mstuart/cull && cd cull
+cargo build --release            # builds target/release/{cull, cull-proxy}
+
+# 2 — run as a proxy (point your agent's base URL at http://localhost:8787)
+CULL_UPSTREAM=https://api.anthropic.com ./target/release/cull-proxy
+
+# 3 — or use the CLI on any stdin
+cat big.rs | ./target/release/cull skeletonize --path big.rs    # drop fn bodies, keep structure
+ps aux     | ./target/release/cull compact-lossy --max-rows 30 --max-field 110
 ```
 
-It speaks Anthropic (`/v1/messages`) and OpenAI (`/v1/chat/completions`). Response headers report what
-it did: `x-cull-input-tokens`, `x-cull-net-tokens`, `x-cull-dropped`, `x-cull-aggression`,
-`x-cull-verbosity-spike`, `x-cull-halted`.
+Proxy env: `CULL_UPSTREAM` (default `https://api.anthropic.com`), `CULL_PORT` (`8787`),
+`CULL_RECENCY` (`4`), `CULL_ENABLED` (`true`), `CULL_CONTEXT_LIMIT` (`200000`). Response headers report
+what it did: `x-cull-net-tokens`, `x-cull-dropped`, `x-cull-aggression`, `x-cull-verbosity-spike`,
+`x-cull-halted`.
 
-| Env var | Default | Meaning |
-|---|---|---|
-| `CULL_UPSTREAM` | `https://api.anthropic.com` | upstream API base URL |
-| `CULL_PORT` | `8787` | listen port |
-| `CULL_RECENCY` | `4` | tool outputs always kept regardless of relevance |
-| `CULL_ENABLED` | `true` | set `0`/`false` for byte-exact passthrough |
-| `CULL_CONTEXT_LIMIT` | `200000` | model context window (drives the fill-based aggression dial) |
+## Proof
 
-### As a CLI (one-shot transforms, read stdin)
+Measured in this repo (o200k tokens), reproducible with the commands shown:
 
-```bash
-cat ctx.json   | cull compress --task "fix the auth bug"   # lossless pipeline + fidelity report
-cat tools.json | cull slim-schema                          # strip JSON-Schema metadata (lossy)
-ps aux         | cull compact-lossy --max-rows 30 --max-field 110   # tabular row-cap + truncate (lossy)
-cat big.rs     | cull skeletonize --path big.rs            # drop fn bodies, keep structure (lossy)
-```
+| What | Result | Reproduce |
+|---|---:|---|
+| **AST code skeletonization** on 31 real Rust files | **65.1%** smaller (57,199 → 19,988) | `cull skeletonize --path <f>` |
+| **`ps aux`** vs RTK at equal fidelity (same rows + columns) | **~4.5% smaller**, 5/5 trials | `ps aux \| cull compact-lossy --max-rows 30 --max-field 110` |
+| **Lossless** JSON / log columnar re-encode | smaller, **byte-recoverable** | `cull compress` |
 
-## How it works
+Code reads are ~67–76% of a coding agent's tokens ([SWE-Pruner, ACL 2026](https://arxiv.org/abs/2601.16746)),
+so skeletonization is the single biggest lever. Competitive head-to-head harnesses (vs Headroom,
+LLMLingua-2, lean-ctx, RTK) live in `crates/cull-bench/benchmarks/`; at **equal fidelity** cull matches
+or beats each on every content type, and is the only one with a lossless mode and cross-turn dedup.
 
-**Lossless pipeline** (default `compress` / proxy): supersession (drop superseded tool outputs),
-IVM/delta (re-reads become diffs), envelope + exact dedup, columnar JSON & log re-encoding,
-JSON-Schema slimming, reasoning-trace pruning, and query-relevance pruning (symbol-overlap,
-recency-protected). Every transform is verified reversible.
+## Compared to
 
-**Opt-in lossy levers**: large-array row-capping, per-line field truncation, token-level telegraphic
-NL compaction, and **AST code skeletonization** (tree-sitter; keep signatures/types/imports/docs,
-drop function bodies, reversible by re-reading).
+cull runs **locally**, is **lossless by default**, is **cache-correct**, and **closes the loop** on
+output — none of the others do all four.
 
-**Closed-loop controller** (proxy): a per-session aggression dial driven by live signals —
-cache-hit-rate (halt → passthrough when compression is busting the cache), output-verbosity (back off
-when the model over-generates), and context-fill (compress harder as the window saturates). Levels:
-*default lossless → tighten recency + skeletonize code → engage lossy*.
+|  | Scope | Deploy | Local | Lossless default | Output-aware |
+|---|---|---|:-:|:-:|:-:|
+| **cull** | tools · logs · files · JSON · history | proxy · library · CLI | ✅ | ✅ | ✅ |
+| [Headroom](https://github.com/chopratejas/headroom) | all context | proxy · lib · MCP | ✅ | ❌ (reversible via cache) | ❌ |
+| [RTK](https://github.com/rtk-ai/rtk) | CLI command outputs | CLI wrapper | ✅ | ❌ | ❌ |
+| [lean-ctx](https://github.com/yvgude/lean-ctx) | CLI commands, MCP tools | CLI · MCP | ✅ | ❌ | ❌ |
+| LLMLingua-2 | prose / RAG | library (ML model) | ✅ | ❌ | ❌ |
+| OpenAI / Anthropic native compaction | conversation history | provider-native | ❌ | ❌ | ❌ |
 
-## Benchmarks
+## When to use · When to skip
 
-Measured in this repo:
+**Great fit if you…**
+- run coding agents and want savings without losing information by default
+- care about the provider cache staying warm (cull won't break the prefix)
+- want code reads compressed structurally (signatures kept, bodies elidable on demand)
 
-- **AST skeletonization: 65.1% token reduction** across 31 real Rust source files (57,199 → 19,988
-  o200k tokens), reproducible via `cull skeletonize`. Code reads are ~67–76% of a coding agent's
-  tokens, so this is the largest single lever.
-- **`ps aux` vs RTK at equal fidelity: ~4.5% smaller** (same rows + columns), 5/5 trials.
+**Skip it if you…**
+- only use a single provider's native compaction and don't need a cross-provider proxy
+- run in a sandbox where a local proxy process can't run
 
-Competitive harnesses live in `crates/cull-bench/benchmarks/` (`headroom_vs_cull.py`, `three_way.py`,
-`qa_accuracy_4way.py`, `real_trace_corpus.py`, `answer_equivalence.py`). They require the competitor
-tools installed. On those benchmarks, **at equal fidelity** Cull matches or beats Headroom
-(SmartCrusher), RTK, LLMLingua-2, and lean-ctx on every content type — and is the only one with a
-lossless mode and cross-turn dedup. The harnesses in `crates/cull-bench/benchmarks/` are the
-reproducible source of those claims.
+<details>
+<summary><b>What's inside</b></summary>
+
+- **Lossless passes** — supersession (drop superseded tool outputs), IVM/delta (re-reads → diffs),
+  envelope + exact dedup, columnar JSON & log re-encoding, JSON-Schema slimming, reasoning-trace
+  pruning, query-relevance pruning.
+- **Opt-in lossy** — large-array row-capping, per-line field truncation, token-level telegraphic NL
+  compaction, **AST code skeletonization** (tree-sitter: rust/python/js/ts/go).
+- **Closed-loop controller** — per-session aggression from cache-hit-rate, output-verbosity, and
+  context-fill signals; cache-prefix-boundary aware; bounded body buffering and upstream timeouts.
+
+</details>
 
 ## Architecture
 
@@ -110,13 +165,10 @@ reproducible source of those claims.
 | `cull-cache` | provider cache models / hit-rate floors |
 | `cull-proxy` | the HTTP proxy + closed-loop controller + sensors |
 | `cull-cli` | the `cull` command |
-| `cull-bench` | competitive benchmarks |
+| `cull-bench` | competitive benchmarks (not published) |
 
 ## Status & limitations
 
-Honest list of what stands between this and production:
-
-- **Never run against a live model API** — verified only against mock upstreams in tests.
 - **No published release** — v0.1.0 is tagged but not yet pushed to crates.io.
 - **3 startup `.expect()` calls in `cull-proxy/main.rs`** — these fail-fast on bind/listen failure
   (appropriate), but the proxy has not been stress-tested against hostile input in a live environment.
@@ -124,7 +176,12 @@ Honest list of what stands between this and production:
   over-estimates true fill (conservative — errs toward compressing sooner).
 - A `>2 MB` *streaming* response whose final usage event straddles the 64 KB tail buffer may skip one
   verbosity sample (non-fatal).
-- User docs beyond this README are thin; the `docs/` tree is design specs + implementation plans.
+- **Never run against a live model API** — verified against mock upstreams + 154 unit/integration tests.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). CI runs `cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo test`, and a release build — please make sure those pass locally.
 
 ## License
 
