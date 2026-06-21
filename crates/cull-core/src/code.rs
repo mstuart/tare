@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use tree_sitter::{Language, Parser};
 use crate::task::extract_symbols;
 
-fn lang_for_path(path: &str) -> Option<Language> {
+pub(crate) fn lang_for_path(path: &str) -> Option<Language> {
     let ext = path.rsplit('.').next()?;
     let lang: Language = match ext {
         "rs" => tree_sitter_rust::LANGUAGE.into(),
