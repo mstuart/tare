@@ -25,5 +25,5 @@ Initial public release.
 - **CLI** (`cull`): `compress`, `slim-schema`, `compact-lossy`, `skeletonize`.
 - Competitive benchmarks under `crates/cull-bench/benchmarks/`.
 
-[Unreleased]: https://github.com/markstuart/cull/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/markstuart/cull/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mstuart/cull/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mstuart/cull/releases/tag/v0.1.0
