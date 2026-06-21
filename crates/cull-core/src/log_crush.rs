@@ -52,10 +52,17 @@ pub fn crush(text: &str) -> Option<String> {
     // Template rows are space-joined plain text (token-efficient — no quotes/commas); exception
     // lines (non-template field count) are emitted verbatim and flagged by index in the metadata.
     // meta = [F, {const_pos: const_val, ...}, [exception_indices]]
-    let cmap: serde_json::Map<String, Value> = const_pos.iter().zip(&const_val)
-        .map(|(p, v)| (p.to_string(), Value::String((*v).to_string()))).collect();
-    let exceptions: Vec<usize> = fields.iter().enumerate()
-        .filter(|(_, f)| f.len() != template_f).map(|(i, _)| i).collect();
+    let cmap: serde_json::Map<String, Value> = const_pos
+        .iter()
+        .zip(&const_val)
+        .map(|(p, v)| (p.to_string(), Value::String((*v).to_string())))
+        .collect();
+    let exceptions: Vec<usize> = fields
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.len() != template_f)
+        .map(|(i, _)| i)
+        .collect();
     let meta = serde_json::to_string(&serde_json::json!([template_f, cmap, exceptions])).ok()?;
 
     let mut out = format!("{MARKER}{meta}");
@@ -69,7 +76,11 @@ pub fn crush(text: &str) -> Option<String> {
             out.push_str(lines[i]); // verbatim line
         }
     }
-    if out.len() < text.len() { Some(out) } else { None }
+    if out.len() < text.len() {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 /// Reverse [`crush`] to the exact original text.
@@ -79,8 +90,12 @@ pub fn expand(crushed: &str) -> Option<String> {
     let meta: Value = serde_json::from_str(lines.next()?).ok()?;
     let template_f = meta.get(0)?.as_u64()? as usize;
     let cmap = meta.get(1)?.as_object()?;
-    let exceptions: std::collections::HashSet<usize> = meta.get(2)?.as_array()?
-        .iter().filter_map(|v| v.as_u64().map(|n| n as usize)).collect();
+    let exceptions: std::collections::HashSet<usize> = meta
+        .get(2)?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_u64().map(|n| n as usize))
+        .collect();
     let const_pos: Vec<usize> = cmap.keys().filter_map(|k| k.parse().ok()).collect();
     let var_pos: Vec<usize> = (0..template_f).filter(|p| !const_pos.contains(p)).collect();
 
@@ -116,15 +131,30 @@ mod tests {
     use super::*;
 
     fn sample_log(n: usize) -> String {
-        (0..n).map(|i| format!("2024-06-20T10:00:{:02}Z INFO worker-{} processed batch {} ok latency={}ms",
-            i % 60, i % 8, i, 20 + i % 30)).collect::<Vec<_>>().join("\n")
+        (0..n)
+            .map(|i| {
+                format!(
+                    "2024-06-20T10:00:{:02}Z INFO worker-{} processed batch {} ok latency={}ms",
+                    i % 60,
+                    i % 8,
+                    i,
+                    20 + i % 30
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
     fn crushes_uniform_log_and_round_trips_byte_exact() {
         let text = sample_log(40);
         let crushed = crush(&text).expect("uniform log should crush");
-        assert!(crushed.len() < text.len(), "smaller: {} < {}", crushed.len(), text.len());
+        assert!(
+            crushed.len() < text.len(),
+            "smaller: {} < {}",
+            crushed.len(),
+            text.len()
+        );
         assert!(round_trips(&text, &crushed), "byte-exact round trip");
         // constant fields factored: "INFO"/"processed"/"ok" appear once (in meta), not per line
         assert_eq!(crushed.matches("processed").count(), 1, "constant factored");
@@ -132,12 +162,17 @@ mod tests {
 
     #[test]
     fn preserves_anomalous_line_verbatim() {
-        let mut lines: Vec<String> = (0..20).map(|i|
-            format!("ts INFO worker-{} ok code={}", i % 4, 200)).collect();
-        lines[7] = "ts FATAL worker-3 OOM heap_exhausted code=ERR_OOM_9931 extra fields here".into();
+        let mut lines: Vec<String> = (0..20)
+            .map(|i| format!("ts INFO worker-{} ok code={}", i % 4, 200))
+            .collect();
+        lines[7] =
+            "ts FATAL worker-3 OOM heap_exhausted code=ERR_OOM_9931 extra fields here".into();
         let text = lines.join("\n");
         let crushed = crush(&text).expect("crush");
-        assert!(crushed.contains("ERR_OOM_9931"), "needle survives: {crushed}");
+        assert!(
+            crushed.contains("ERR_OOM_9931"),
+            "needle survives: {crushed}"
+        );
         assert!(round_trips(&text, &crushed));
     }
 

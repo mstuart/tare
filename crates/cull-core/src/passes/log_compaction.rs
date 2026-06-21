@@ -16,7 +16,9 @@ pub struct LogCompactionPass {
 
 impl LogCompactionPass {
     pub fn new() -> Self {
-        Self { counter: ApproxCounter::o200k() }
+        Self {
+            counter: ApproxCounter::o200k(),
+        }
     }
 }
 
@@ -67,26 +69,41 @@ impl Pass for LogCompactionPass {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planner::Planner;
-    use crate::session::SessionState;
-    use crate::segment::*;
     use crate::plan::SegmentAction;
+    use crate::planner::Planner;
+    use crate::segment::*;
+    use crate::session::SessionState;
 
     fn log_seg(id: u64, text: &str) -> Segment {
         Segment {
-            id: SegmentId(id), kind: SegmentKind::ToolOutput { class: "log".into() },
-            role: Role::Tool, bytes: text.as_bytes().to_vec(),
+            id: SegmentId(id),
+            kind: SegmentKind::ToolOutput {
+                class: "log".into(),
+            },
+            role: Role::Tool,
+            bytes: text.as_bytes().to_vec(),
             token_count: ApproxCounter::o200k().count(text) as u32,
-            position: id as usize, mutation_class: MutationClass::Fast,
-            origin: Origin::default(), protected_spans: vec![], refs: RefLedger::default(),
+            position: id as usize,
+            mutation_class: MutationClass::Fast,
+            origin: Origin::default(),
+            protected_spans: vec![],
+            refs: RefLedger::default(),
         }
     }
 
     #[test]
     fn compacts_repetitive_log_losslessly() {
-        let text = (0..30).map(|i|
-            format!("2024-06-20T10:00:{:02}Z INFO worker-{} processed batch {} ok", i % 60, i % 8, i))
-            .collect::<Vec<_>>().join("\n");
+        let text = (0..30)
+            .map(|i| {
+                format!(
+                    "2024-06-20T10:00:{:02}Z INFO worker-{} processed batch {} ok",
+                    i % 60,
+                    i % 8,
+                    i
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         let seg = log_seg(0, &text);
         let original = seg.token_count;
         let plan = Planner::new(vec![Box::new(LogCompactionPass::new())])

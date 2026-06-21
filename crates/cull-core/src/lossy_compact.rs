@@ -13,10 +13,21 @@
 
 use serde_json::Value;
 
-const ALERTS: &[&str] = &["error", "fail", "critical", "fatal", "warn", "exception", "denied", "timeout"];
+const ALERTS: &[&str] = &[
+    "error",
+    "fail",
+    "critical",
+    "fatal",
+    "warn",
+    "exception",
+    "denied",
+    "timeout",
+];
 
 fn is_anomaly(row: &Value, modal_keys: &[String]) -> bool {
-    let Some(obj) = row.as_object() else { return true };
+    let Some(obj) = row.as_object() else {
+        return true;
+    };
     // shape anomaly: key-set differs from the modal row
     if obj.len() != modal_keys.len() || !obj.keys().zip(modal_keys).all(|(k, m)| k == m) {
         return true;
@@ -27,13 +38,18 @@ fn is_anomaly(row: &Value, modal_keys: &[String]) -> bool {
 }
 
 fn modal_keys(arr: &[Value]) -> Vec<String> {
-    let mut counts: std::collections::HashMap<Vec<String>, usize> = std::collections::HashMap::new();
+    let mut counts: std::collections::HashMap<Vec<String>, usize> =
+        std::collections::HashMap::new();
     for o in arr {
         if let Some(m) = o.as_object() {
             *counts.entry(m.keys().cloned().collect()).or_insert(0) += 1;
         }
     }
-    counts.into_iter().max_by_key(|(_, c)| *c).map(|(k, _)| k).unwrap_or_default()
+    counts
+        .into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(k, _)| k)
+        .unwrap_or_default()
 }
 
 /// Aggressively (lossily) compact `text`: a JSON array of objects, or — failing that — line-based
@@ -52,7 +68,13 @@ pub fn compact(text: &str, boundary: usize, task: Option<&str>) -> Option<String
 ///
 /// Together they let Cull match or beat a tabular filter's ratio while still preserving the
 /// anomalies, alert lines, and query-relevant rows that such filters discard blindly.
-pub fn compact_opts(text: &str, boundary: usize, task: Option<&str>, max_field: usize, max_rows: usize) -> Option<String> {
+pub fn compact_opts(
+    text: &str,
+    boundary: usize,
+    task: Option<&str>,
+    max_field: usize,
+    max_rows: usize,
+) -> Option<String> {
     let syms = task.map(crate::task::extract_symbols).unwrap_or_default();
     match serde_json::from_str::<Value>(text) {
         Ok(v) if v.is_array() => compact_json_array(&v, boundary, &syms)
@@ -80,7 +102,9 @@ fn cap_rows(keep: &mut [bool], mandatory: &[bool], scores: &[usize], max_rows: u
         return;
     }
     let budget = max_rows.saturating_sub(mandatory.iter().filter(|&&m| m).count());
-    let mut optional: Vec<usize> = (0..keep.len()).filter(|&i| keep[i] && !mandatory[i]).collect();
+    let mut optional: Vec<usize> = (0..keep.len())
+        .filter(|&i| keep[i] && !mandatory[i])
+        .collect();
     optional.sort_by_key(|&i| std::cmp::Reverse(scores[i]));
     let winners: std::collections::HashSet<usize> = optional.into_iter().take(budget).collect();
     for (i, k) in keep.iter_mut().enumerate() {
@@ -104,7 +128,10 @@ fn relevant(unit: &str, syms: &Syms) -> bool {
 /// token-level dropping scatters across sentences.
 fn salience(unit: &str) -> usize {
     let mut score = 0;
-    for w in unit.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
+    for w in unit
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
         if w.chars().any(|c| c.is_ascii_digit()) {
             score += 3; // numbers/dates/codes/IDs — the highest-value facts
         } else if w.chars().next().is_some_and(char::is_uppercase) && w.len() > 2 {
@@ -122,7 +149,8 @@ fn split_sentences(text: &str) -> Vec<&str> {
     let bytes = text.as_bytes();
     let mut start = 0;
     for i in 0..bytes.len() {
-        let end = matches!(bytes[i], b'.' | b'!' | b'?') && (i + 1 >= bytes.len() || bytes[i + 1] == b' ' || bytes[i + 1] == b'\n');
+        let end = matches!(bytes[i], b'.' | b'!' | b'?')
+            && (i + 1 >= bytes.len() || bytes[i + 1] == b' ' || bytes[i + 1] == b'\n');
         if end {
             out.push(text[start..=i].trim_start());
             start = i + 1;
@@ -140,7 +168,13 @@ fn split_sentences(text: &str) -> Vec<&str> {
 /// Lossy compaction of free text: line units (logs/tables) when multi-line, else sentence units
 /// (prose). Keeps the first/last `boundary` units, any unit with an alert keyword, and any unit
 /// relevant to the task; drops the rest with an explicit marker.
-fn compact_text(text: &str, boundary: usize, syms: &Syms, max_field: usize, max_rows: usize) -> Option<String> {
+fn compact_text(
+    text: &str,
+    boundary: usize,
+    syms: &Syms,
+    max_field: usize,
+    max_rows: usize,
+) -> Option<String> {
     let multiline = text.matches('\n').count() >= 4;
     // Flowing prose (few newlines): token-level telegraphic compaction beats sentence-level dropping.
     // With a task, keep the relevant sentences whole, then telegraphic the rest.
@@ -164,9 +198,14 @@ fn compact_text(text: &str, boundary: usize, syms: &Syms, max_field: usize, max_
             }
         }
         let out = out_parts.join(" ");
-        return if out.len() < text.len() { Some(out) } else { crate::telegraphic::compact(text) };
+        return if out.len() < text.len() {
+            Some(out)
+        } else {
+            crate::telegraphic::compact(text)
+        };
     }
-    let (units, joiner, label): (Vec<&str>, &str, &str) = (text.split('\n').collect(), "\n", "lines");
+    let (units, joiner, label): (Vec<&str>, &str, &str) =
+        (text.split('\n').collect(), "\n", "lines");
     let n = units.len();
     if n <= 2 * boundary + 4 {
         return None;
@@ -174,8 +213,12 @@ fn compact_text(text: &str, boundary: usize, syms: &Syms, max_field: usize, max_
     // Mandatory rows: boundary head/tail (schema + recency), alert lines, query-relevant lines.
     // These are never dropped to hit a ratio — the fidelity floor RTK-style filters lack.
     let mut mandatory = vec![false; n];
-    for k in mandatory.iter_mut().take(boundary.min(n)) { *k = true; }
-    for k in mandatory.iter_mut().skip(n.saturating_sub(boundary)) { *k = true; }
+    for k in mandatory.iter_mut().take(boundary.min(n)) {
+        *k = true;
+    }
+    for k in mandatory.iter_mut().skip(n.saturating_sub(boundary)) {
+        *k = true;
+    }
     for (i, u) in units.iter().enumerate() {
         let l = u.to_ascii_lowercase();
         if ALERTS.iter().any(|a| l.contains(a)) || relevant(u, syms) {
@@ -201,16 +244,30 @@ fn compact_text(text: &str, boundary: usize, syms: &Syms, max_field: usize, max_
     }
     // Opt-in row cap: trim to at most max_rows kept lines (mandatory + highest-salience).
     cap_rows(&mut keep, &mandatory, &scores, max_rows);
-    let kept: Vec<String> = units.iter().zip(&keep).filter(|(_, k)| **k)
-        .map(|(u, _)| truncate(u, max_field)).collect();
+    let kept: Vec<String> = units
+        .iter()
+        .zip(&keep)
+        .filter(|(_, k)| **k)
+        .map(|(u, _)| truncate(u, max_field))
+        .collect();
     let dropped = n - kept.len();
     if dropped == 0 && max_field == 0 {
         return None;
     }
-    let note = if max_field > 0 { "; lines truncated" } else { "" };
-    let out = format!("{}\n[cull-lossy: {dropped} of {n} {label} elided; kept boundary+alerts+relevant{note}]",
-        kept.join(joiner));
-    if out.len() < text.len() { Some(out) } else { None }
+    let note = if max_field > 0 {
+        "; lines truncated"
+    } else {
+        ""
+    };
+    let out = format!(
+        "{}\n[cull-lossy: {dropped} of {n} {label} elided; kept boundary+alerts+relevant{note}]",
+        kept.join(joiner)
+    );
+    if out.len() < text.len() {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 fn compact_json_array(value: &Value, boundary: usize, syms: &Syms) -> Option<String> {
@@ -234,7 +291,12 @@ fn compact_json_array(value: &Value, boundary: usize, syms: &Syms) -> Option<Str
             keep[i] = true;
         }
     }
-    let kept: Vec<&Value> = arr.iter().zip(&keep).filter(|(_, k)| **k).map(|(r, _)| r).collect();
+    let kept: Vec<&Value> = arr
+        .iter()
+        .zip(&keep)
+        .filter(|(_, k)| **k)
+        .map(|(r, _)| r)
+        .collect();
     let dropped = n - kept.len();
     if dropped == 0 {
         return None; // nothing elided (all anomalous) — the lossless path is better
@@ -248,7 +310,9 @@ fn compact_json_array(value: &Value, boundary: usize, syms: &Syms) -> Option<Str
         }
         out.push_str(&serde_json::to_string(row).ok()?);
     }
-    out.push_str(&format!("\n[cull-lossy: {dropped} of {n} uniform rows elided; kept boundary+anomalies]"));
+    out.push_str(&format!(
+        "\n[cull-lossy: {dropped} of {n} uniform rows elided; kept boundary+anomalies]"
+    ));
 
     // worth it only if smaller than the compact original
     if out.len() < value.to_string().len() {
@@ -264,8 +328,12 @@ mod tests {
 
     #[test]
     fn drops_uniform_bulk_keeps_anomalies_and_boundaries() {
-        let mut rows: Vec<Value> = (0..100).map(|i| serde_json::json!(
-            {"id":i,"name":format!("u{i}"),"status":"ok"})).collect();
+        let mut rows: Vec<Value> = (0..100)
+            .map(|i| {
+                serde_json::json!(
+            {"id":i,"name":format!("u{i}"),"status":"ok"})
+            })
+            .collect();
         rows[50] = serde_json::json!({"id":50,"name":"u50","status":"critical","error":"ERR_X"});
         let text = serde_json::to_string(&Value::Array(rows)).unwrap();
         let out = compact(&text, 3, None).expect("should compact");
@@ -276,7 +344,10 @@ mod tests {
         assert!(out.contains("\"id\":0") && out.contains("\"id\":99"));
         // bulk dropped + marker
         assert!(out.contains("rows elided"));
-        assert!(!out.contains("\"id\":40"), "a uniform middle row was dropped");
+        assert!(
+            !out.contains("\"id\":40"),
+            "a uniform middle row was dropped"
+        );
     }
 
     #[test]
@@ -288,16 +359,24 @@ mod tests {
     #[test]
     fn max_rows_caps_kept_lines_but_never_drops_alerts() {
         // 200 tabular lines; line 137 carries an alert keyword.
-        let mut lines: Vec<String> = (0..200).map(|i| format!("proc{i} cpu {i}.{i} mem {i}00 rss {i}99")).collect();
+        let mut lines: Vec<String> = (0..200)
+            .map(|i| format!("proc{i} cpu {i}.{i} mem {i}00 rss {i}99"))
+            .collect();
         lines[137] = "proc137 cpu 9.9 mem ERROR rss 999 FATAL crash".to_string();
         let text = lines.join("\n");
         // cap to 12 rows, truncate each kept line to 30 chars
         let out = compact_opts(&text, 2, None, 30, 12).expect("should compact");
-        let kept: Vec<&str> = out.lines().filter(|l| !l.starts_with("[cull-lossy")).collect();
+        let kept: Vec<&str> = out
+            .lines()
+            .filter(|l| !l.starts_with("[cull-lossy"))
+            .collect();
         // cap respected (≤ 12 content lines)
         assert!(kept.len() <= 12, "row cap exceeded: {} lines", kept.len());
         // the alert line survived the cap (fidelity floor) — its truncated prefix is present
-        assert!(out.contains("proc137"), "alert row was dropped by the cap: {out}");
+        assert!(
+            out.contains("proc137"),
+            "alert row was dropped by the cap: {out}"
+        );
         // truncation applied
         assert!(out.contains('…'), "max_field truncation not applied: {out}");
     }

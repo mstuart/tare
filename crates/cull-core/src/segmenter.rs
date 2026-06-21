@@ -28,7 +28,11 @@ pub fn segment(blocks: &[RawBlock], counter: &dyn TokenCounter) -> Vec<Segment> 
             protected_spans: detect_protected_spans(&b.text),
             // `turn: i` is the block index — an approximation. RawBlock carries no
             // conversation turn yet; the proxy will supply real turns in a later plan.
-            origin: Origin { turn: i, path: b.path.clone(), ..Origin::default() },
+            origin: Origin {
+                turn: i,
+                path: b.path.clone(),
+                ..Origin::default()
+            },
             bytes: b.text.clone().into_bytes(),
             refs: RefLedger::default(),
         })
@@ -38,11 +42,15 @@ pub fn segment(blocks: &[RawBlock], counter: &dyn TokenCounter) -> Vec<Segment> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::segment::*;
     use cull_tokenize::ApproxCounter;
 
     fn raw(role: Role, kind: SegmentKind, text: &str) -> RawBlock {
-        RawBlock { role, kind, text: text.to_string(), path: None }
+        RawBlock {
+            role,
+            kind,
+            text: text.to_string(),
+            path: None,
+        }
     }
 
     #[test]
@@ -50,7 +58,11 @@ mod tests {
         let counter = ApproxCounter::o200k();
         let blocks = vec![
             raw(Role::System, SegmentKind::SystemPrompt, "You are an agent."),
-            raw(Role::Tool, SegmentKind::FileRead, "fn main() {} // src/main.rs:1"),
+            raw(
+                Role::Tool,
+                SegmentKind::FileRead,
+                "fn main() {} // src/main.rs:1",
+            ),
         ];
         let segs = segment(&blocks, &counter);
         assert_eq!(segs.len(), 2);
@@ -75,8 +87,10 @@ mod tests {
     fn segment_carries_path_into_origin() {
         let counter = ApproxCounter::o200k();
         let blocks = vec![RawBlock {
-            role: Role::Tool, kind: SegmentKind::FileRead,
-            text: "fn main(){}".into(), path: Some("src/main.rs".into()),
+            role: Role::Tool,
+            kind: SegmentKind::FileRead,
+            text: "fn main(){}".into(),
+            path: Some("src/main.rs".into()),
         }];
         let segs = segment(&blocks, &counter);
         assert_eq!(segs[0].origin.path.as_deref(), Some("src/main.rs"));
