@@ -37,6 +37,14 @@ enum Command {
         /// Optional task/query: units relevant to it are always kept (query-aware pruning).
         #[arg(long, default_value = "")]
         task: String,
+        /// Aggressive: truncate each kept LINE to this many chars (e.g. the COMMAND column of
+        /// `ps aux`) for maximum ratio. 0 = no truncation.
+        #[arg(long, default_value_t = 0)]
+        max_field: usize,
+        /// Aggressive: cap kept LINES to this many (boundary/alert/relevant always kept, the rest
+        /// filled by salience). Pairs with --max-field to match a per-command filter. 0 = uncapped.
+        #[arg(long, default_value_t = 0)]
+        max_rows: usize,
     },
 }
 
@@ -77,14 +85,14 @@ fn main() {
             let out = cull_core::schema_slim::slim(&input).unwrap_or(input);
             println!("{out}");
         }
-        Command::CompactLossy { boundary, task } => {
+        Command::CompactLossy { boundary, task, max_field, max_rows } => {
             let mut input = String::new();
             if std::io::stdin().read_to_string(&mut input).is_err() {
                 eprintln!("error: failed to read stdin");
                 std::process::exit(1);
             }
             let t = if task.is_empty() { None } else { Some(task.as_str()) };
-            let out = cull_core::lossy_compact::compact(&input, boundary, t).unwrap_or(input);
+            let out = cull_core::lossy_compact::compact_opts(&input, boundary, t, max_field, max_rows).unwrap_or(input);
             println!("{out}");
         }
     }

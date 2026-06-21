@@ -41,10 +41,50 @@ fn modal_keys(arr: &[Value]) -> Vec<String> {
 /// to the task (sharing a task symbol) are always kept — query-aware pruning, which base LLMLingua-2
 /// (query-agnostic) does not do. Returns `None` if not worth it / not smaller.
 pub fn compact(text: &str, boundary: usize, task: Option<&str>) -> Option<String> {
+    compact_opts(text, boundary, task, 0, 0)
+}
+
+/// Like [`compact`], plus two opt-in aggressive levers (each 0 = off), mirroring the two ways a
+/// per-command CLI filter (e.g. RTK on `ps aux`) maximizes its ratio:
+/// - `max_field`: truncate each kept line to this many characters (drops the long COMMAND column);
+/// - `max_rows`: cap the number of kept lines to this many — mandatory rows (boundary + alert +
+///   query-relevant) are always retained, remaining slots go to the highest-salience rows.
+///
+/// Together they let Cull match or beat a tabular filter's ratio while still preserving the
+/// anomalies, alert lines, and query-relevant rows that such filters discard blindly.
+pub fn compact_opts(text: &str, boundary: usize, task: Option<&str>, max_field: usize, max_rows: usize) -> Option<String> {
     let syms = task.map(crate::task::extract_symbols).unwrap_or_default();
     match serde_json::from_str::<Value>(text) {
-        Ok(v) if v.is_array() => compact_json_array(&v, boundary, &syms).or_else(|| compact_text(text, boundary, &syms)),
-        _ => compact_text(text, boundary, &syms),
+        Ok(v) if v.is_array() => compact_json_array(&v, boundary, &syms)
+            .or_else(|| compact_text(text, boundary, &syms, max_field, max_rows)),
+        _ => compact_text(text, boundary, &syms, max_field, max_rows),
+    }
+}
+
+/// Truncate `s` to `n` characters (char-safe), appending `…` when shortened. `n == 0` leaves it.
+fn truncate(s: &str, n: usize) -> String {
+    if n == 0 || s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n).collect::<String>() + "…"
+    }
+}
+
+/// Cap a boolean keep-mask to at most `max_rows` set bits. `mandatory` rows are always retained
+/// (boundary + alert + query-relevant — never dropped to hit a ratio); the remaining budget is
+/// filled with the kept rows of highest `scores`. No-op when `max_rows == 0` or already within
+/// budget. This is the row analog of field truncation: the same lever RTK uses to keep only the
+/// top-N processes of `ps aux`, but here the mandatory set guarantees alerts/relevant rows survive.
+fn cap_rows(keep: &mut [bool], mandatory: &[bool], scores: &[usize], max_rows: usize) {
+    if max_rows == 0 || keep.iter().filter(|&&k| k).count() <= max_rows {
+        return;
+    }
+    let budget = max_rows.saturating_sub(mandatory.iter().filter(|&&m| m).count());
+    let mut optional: Vec<usize> = (0..keep.len()).filter(|&i| keep[i] && !mandatory[i]).collect();
+    optional.sort_by_key(|&i| std::cmp::Reverse(scores[i]));
+    let winners: std::collections::HashSet<usize> = optional.into_iter().take(budget).collect();
+    for (i, k) in keep.iter_mut().enumerate() {
+        *k = mandatory[i] || winners.contains(&i);
     }
 }
 
@@ -100,7 +140,7 @@ fn split_sentences(text: &str) -> Vec<&str> {
 /// Lossy compaction of free text: line units (logs/tables) when multi-line, else sentence units
 /// (prose). Keeps the first/last `boundary` units, any unit with an alert keyword, and any unit
 /// relevant to the task; drops the rest with an explicit marker.
-fn compact_text(text: &str, boundary: usize, syms: &Syms) -> Option<String> {
+fn compact_text(text: &str, boundary: usize, syms: &Syms, max_field: usize, max_rows: usize) -> Option<String> {
     let multiline = text.matches('\n').count() >= 4;
     // Flowing prose (few newlines): token-level telegraphic compaction beats sentence-level dropping.
     // With a task, keep the relevant sentences whole, then telegraphic the rest.
@@ -131,19 +171,22 @@ fn compact_text(text: &str, boundary: usize, syms: &Syms) -> Option<String> {
     if n <= 2 * boundary + 4 {
         return None;
     }
-    let mut keep = vec![false; n];
-    for k in keep.iter_mut().take(boundary.min(n)) { *k = true; }
-    for k in keep.iter_mut().skip(n.saturating_sub(boundary)) { *k = true; }
+    // Mandatory rows: boundary head/tail (schema + recency), alert lines, query-relevant lines.
+    // These are never dropped to hit a ratio — the fidelity floor RTK-style filters lack.
+    let mut mandatory = vec![false; n];
+    for k in mandatory.iter_mut().take(boundary.min(n)) { *k = true; }
+    for k in mandatory.iter_mut().skip(n.saturating_sub(boundary)) { *k = true; }
     for (i, u) in units.iter().enumerate() {
         let l = u.to_ascii_lowercase();
         if ALERTS.iter().any(|a| l.contains(a)) || relevant(u, syms) {
-            keep[i] = true;
+            mandatory[i] = true;
         }
     }
+    let scores: Vec<usize> = units.iter().map(|u| salience(u)).collect();
+    let mut keep = mandatory.clone();
     // Query-less: also keep the fact-dense units (top salience), preserving information throughout
     // the text rather than only at the boundaries.
     if syms.is_empty() {
-        let scores: Vec<usize> = units.iter().map(|u| salience(u)).collect();
         let mut nonzero: Vec<usize> = scores.iter().copied().filter(|&s| s > 0).collect();
         nonzero.sort_unstable();
         if !nonzero.is_empty() {
@@ -156,12 +199,16 @@ fn compact_text(text: &str, boundary: usize, syms: &Syms) -> Option<String> {
             }
         }
     }
-    let kept: Vec<&str> = units.iter().zip(&keep).filter(|(_, k)| **k).map(|(u, _)| *u).collect();
+    // Opt-in row cap: trim to at most max_rows kept lines (mandatory + highest-salience).
+    cap_rows(&mut keep, &mandatory, &scores, max_rows);
+    let kept: Vec<String> = units.iter().zip(&keep).filter(|(_, k)| **k)
+        .map(|(u, _)| truncate(u, max_field)).collect();
     let dropped = n - kept.len();
-    if dropped == 0 {
+    if dropped == 0 && max_field == 0 {
         return None;
     }
-    let out = format!("{}\n[cull-lossy: {dropped} of {n} {label} elided; kept boundary+alerts+relevant]",
+    let note = if max_field > 0 { "; lines truncated" } else { "" };
+    let out = format!("{}\n[cull-lossy: {dropped} of {n} {label} elided; kept boundary+alerts+relevant{note}]",
         kept.join(joiner));
     if out.len() < text.len() { Some(out) } else { None }
 }
@@ -236,5 +283,22 @@ mod tests {
     fn refuses_small_arrays() {
         let text = serde_json::to_string(&serde_json::json!([{"a":1},{"a":2},{"a":3}])).unwrap();
         assert!(compact(&text, 3, None).is_none());
+    }
+
+    #[test]
+    fn max_rows_caps_kept_lines_but_never_drops_alerts() {
+        // 200 tabular lines; line 137 carries an alert keyword.
+        let mut lines: Vec<String> = (0..200).map(|i| format!("proc{i} cpu {i}.{i} mem {i}00 rss {i}99")).collect();
+        lines[137] = "proc137 cpu 9.9 mem ERROR rss 999 FATAL crash".to_string();
+        let text = lines.join("\n");
+        // cap to 12 rows, truncate each kept line to 30 chars
+        let out = compact_opts(&text, 2, None, 30, 12).expect("should compact");
+        let kept: Vec<&str> = out.lines().filter(|l| !l.starts_with("[cull-lossy")).collect();
+        // cap respected (≤ 12 content lines)
+        assert!(kept.len() <= 12, "row cap exceeded: {} lines", kept.len());
+        // the alert line survived the cap (fidelity floor) — its truncated prefix is present
+        assert!(out.contains("proc137"), "alert row was dropped by the cap: {out}");
+        // truncation applied
+        assert!(out.contains('…'), "max_field truncation not applied: {out}");
     }
 }

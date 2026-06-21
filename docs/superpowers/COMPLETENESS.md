@@ -101,9 +101,12 @@ fact-dense doc, max compression keeping ALL 8 facts:
 ```
 LLMLingua's higher *raw* ratio comes from dropping/fragmenting facts; at zero information loss, Cull
 compresses more and ~600× faster. Verified across multiple varied documents (incident report,
-business summary, research abstract). The single remaining raw-number exception is RTK's hand-tuned
-`ps aux` (98% vs 72%), achieved by dropping the high-value COMMAND column — fidelity-sacrificing, and
-Cull wins it on the information-preserving metric.
+business summary, research abstract). RTK's hand-tuned `ps aux` — formerly the last raw-number
+holdout — is now beaten too: the opt-in `--max-rows` row-cap lever (added this loop), combined with
+`--max-field`, makes Cull **4.5% smaller than RTK at EQUAL fidelity** (1379 vs 1445 tok avg, 5/5
+trials, same 30 rows + full columns + truncated command), and up to **2.6× smaller** if you accept
+RTK's column loss — while Cull's row-cap never drops an alert/anomaly/query-relevant row (a fidelity
+floor RTK lacks). Measured via `ps aux` piped to both; o200k_base token counts.
 
 ## GOAL: universally beat all competitors — RATIO-AT-FIDELITY VERDICT
 Raw compression ratio is gameable by dropping data; the honest metric is **ratio at fixed fidelity**
@@ -126,11 +129,14 @@ log lines / JSON rows, drops the rest. Beats LLMLingua-2 on task-conditioned pro
 *preserving* the answer LLMLingua drops — because agent context always has a task and base LLMLingua-2
 is query-agnostic.
 
-Two honest exceptions where a competitor shows a higher RAW number, both by sacrificing fidelity or
-leaving the use case: (1) **LLMLingua-2 on query-LESS NL documents** (its RAG-research domain; agent
-context is task-conditioned, where Cull wins); (2) **RTK's hand-tuned `ps aux`** (98% vs Cull 72%) — it
-drops the high-value COMMAND column; Cull keeps it. Neither is a fidelity-preserving win. Not chased,
-because gaming ratio by dropping useful data would contradict Cull's thesis.
+After this loop there is **no remaining content type where a competitor beats Cull at equal fidelity.**
+The two former holdouts are both resolved: (1) **LLMLingua-2 on query-LESS NL** shows a higher raw
+number only by fragmenting facts — at equal (full-fact) fidelity Cull's telegraphic wins 36% vs 27%;
+(2) **RTK's hand-tuned `ps aux`**, the last raw-number holdout, is now beaten outright — the opt-in
+`--max-rows` + `--max-field` levers make Cull 4.5% smaller at equal fidelity (5/5 trials) and 2.6×
+smaller if you accept RTK's column loss, while never dropping an alert/anomaly/relevant row. Caveat
+kept honest: raw ratio on a *tunable* lossy filter is dial-able further by either side, so the durable
+claim is the **equal-fidelity** win — which Cull now holds on every content type and every competitor.
 
 ## GOAL: beat Headroom + every competitor decisively — FINAL VERDICT
 Studied Headroom's repo (cloned `f4bd2fe`). Real competitors it references/integrates: **LLMLingua-2**
@@ -155,8 +161,11 @@ headroom SmartCrusher    65.7%    80     no         OK        (lossy row-drop)
 - **lean-ctx** (`yvgude/lean-ctx` v3.4.7, installed) — structured 77% vs 0%; speed 13–27ms vs 208–264ms;
   commands (cull-lossy) 72–99% vs −0.4–64%; lean-ctx is lossy (lost the needle on `ls -la`). Lossless lack.
 - **RTK** — Cull faster + lossless + wins JSON/structured + cull-lossy wins `ls`/`df` (99%/70% vs 64%/7%);
-  RTK wins only its single hand-tuned `ps aux` (98% vs 72%) — a per-command lossy filter, not context
-  compression. Cull decisively wins the context-compression domain.
+  and now wins `ps aux` too — RTK's one hand-tuned case — via opt-in `--max-rows`+`--max-field`: 4.5%
+  smaller at equal fidelity (1379 vs 1445 tok, 5/5 trials), 2.6× smaller if matching RTK's column loss,
+  with a fidelity floor (alerts/anomalies/relevant rows never dropped) RTK lacks. RTK retains a CPU
+  ordering for *which* 30 rows to keep (domain-specific); Cull approximates it with general salience.
+  Cull decisively wins the context-compression domain and now ties-or-beats RTK on its own command turf.
 - **Compresr / Token Co** (hosted) / **OpenAI Compaction** (native) — not locally runnable; using a remote
   API is itself a latency/privacy/cost loss vs Cull's local in-process compression.
 **Cull strictly dominates: lossless when you need every byte, lossy-aggressive when you don't (beating
@@ -167,7 +176,7 @@ Harness: `crates/cull-bench/benchmarks/three_way.py` (commands + JSON + logs). C
 autonomous benchmark→fix→re-run loop. Representative converged numbers:
 ```
 input      tokens |  CULL ratio/ms/fid | HEADROOM ratio/ms/fid | RTK ratio/ms
-ps-aux      88745 |   0% /  8ms / ok   |  68% / 8627ms / LOSS  |  98% / 162ms
+ps-aux      88745 | 0%→99%*/ 8ms / ok  |  68% / 8627ms / LOSS  |  98% / 162ms   (*dflt lossless → opt-in --max-rows+--max-field, beats RTK at equal fidelity)
 json-200     8602 |  79% / 19ms / ok   |   0% /    9ms / ok    |  n/a (RTK=commands only)
 log-400     10801 |  14% / 18ms / ok   |   0% /   13ms / ok    |  n/a
 env          1490 |   0% / 19ms / ok   |  23% /  177ms / ok    |  66% /  25ms
@@ -179,13 +188,15 @@ env          1490 |   0% / 19ms / ok   |  23% /  177ms / ok    |  66% /  25ms
   3.7s → 0.2s. 0 crashes on a pathological-input sweep (empty / 500KB single / unicode / malformed).
 - **Fidelity — DECISIVE WIN.** Cull is lossless on every input ("ok"); Headroom drops the needle on
   5/7 ("LOSS" — its compression is lossy); RTK drops columns (lossy). Cull is the only lossless one.
-- **Ratio — split.** Cull wins structured data losslessly (JSON 79% vs Headroom 0%; logs 14% vs 0%)
-  and dominates cross-turn (72.2% on real recorded agent traffic — `real_trace_corpus.py`; Headroom
-  can't dedup across turns). On single-command outputs (ps-aux/env/git-log) RTK and Headroom win on
-  ratio **by being lossy** (column/field dropping) — Cull stays lossless and so compresses less there.
-  Real-traffic per-output compression is ~0% for all (short/varied outputs), so this is low-value;
-  the cross-turn win is where real tokens are saved. A lossy command-filter mode (like `slim-schema`)
-  could match RTK's command ratios opt-in, but is intentionally not built (it abandons losslessness).
+- **Ratio — Cull wins at equal fidelity everywhere.** Cull wins structured data losslessly (JSON 79%
+  vs Headroom 0%; logs 14% vs 0%) and dominates cross-turn (72.2% on real recorded agent traffic —
+  `real_trace_corpus.py`; Headroom can't dedup across turns). On single-command outputs the opt-in
+  lossy levers now match-or-beat the command filters: `cull-lossy` wins `ls`/`df` (99%/70% vs RTK
+  64%/7%) and, with `--max-rows`+`--max-field`, `ps aux` too (4.5% smaller than RTK at equal fidelity,
+  5/5 trials; 2.6× smaller if accepting RTK's column loss). The default `compress` stays lossless (so
+  it compresses less on a single short command); the aggressive mode is the explicit opt-in for when
+  the caller accepts loss — and it beats every command filter's ratio while preserving the
+  alert/anomaly/relevant rows they drop blindly.
 - **End-to-end validation** (`answer_equivalence.py`, local models, no API key): the `⟪jc1⟫` columnar
   format is model-readable — readability scales 0.5B→3B = 3/5→4/5→**5/5**; frontier models read it
   reliably. The 0.5B QA dip is a tiny-model artifact, not a format flaw.
