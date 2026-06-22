@@ -1,0 +1,31 @@
+site_name: cull
+site_description: Lossless-by-default context compression for LLM coding agents
+repo_url: https://github.com/mstuart/cull
+repo_name: mstuart/cull
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: black
+      toggle: { icon: material/weather-night, name: Dark }
+    - scheme: slate
+      primary: black
+      toggle: { icon: material/weather-sunny, name: Light }
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Architecture: architecture.md
+  - CLI reference: cli.md
+  - Benchmarks: benchmarks.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables
