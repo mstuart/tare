@@ -1,10 +1,10 @@
-# cull
+# tare
 
 > Lossless-by-default, cache-correct, closed-loop context compression for LLM coding agents. A Rust
-> workspace providing a library (`cull-core`), an HTTP proxy (`cull-proxy`) that speaks the Anthropic
-> and OpenAI APIs, and a CLI (`cull`).
+> workspace providing a library (`tare-core`), an HTTP proxy (`tare-proxy`) that speaks the Anthropic
+> and OpenAI APIs, and a CLI (`tare`).
 
-cull compresses an agent's context window before it reaches the model. It is **lossless by default**
+tare compresses an agent's context window before it reaches the model. It is **lossless by default**
 (columnar JSON/log re-encode, exact/envelope dedup, cross-turn IVM delta, supersession, schema-slim,
 query-relevance) and **lossy only on opt-in** (row-cap, field-truncate, telegraphic NL, AST code
 skeletonization). It is **cache-correct**: only the dynamic suffix after the provider's cache
@@ -14,9 +14,9 @@ back off), and context-fill (compress harder).
 
 ## Usage
 
-- Proxy: `cull-proxy` — env `CULL_UPSTREAM`, `CULL_PORT` (8787), `CULL_CONTEXT_LIMIT` (200000);
+- Proxy: `tare-proxy` — env `TARE_UPSTREAM`, `TARE_PORT` (8787), `TARE_CONTEXT_LIMIT` (200000);
   endpoints `/v1/messages` (Anthropic) and `/v1/chat/completions` (OpenAI).
-- CLI: `cull compress | slim-schema | compact-lossy | skeletonize`.
+- CLI: `tare compress | slim-schema | compact-lossy | skeletonize`.
 
 ## Docs
 

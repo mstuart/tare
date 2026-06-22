@@ -1,0 +1,18 @@
+[package]
+name = "tare-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "tare-bench"
+path = "src/main.rs"
+
+[lib]
+name = "tare_bench"
+path = "src/lib.rs"
+
+[dependencies]
+tare-core = { path = "../tare-core" }
+tare-tokenize = { path = "../tare-tokenize" }

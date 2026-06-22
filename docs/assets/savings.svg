@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="700" height="220" viewBox="0 0 700 220" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
   <rect width="700" height="220" rx="10" fill="#0d1117"/>
-  <text x="24" y="34" fill="#e6edf3" font-size="17" font-weight="700">cull — token reduction by content type</text>
+  <text x="24" y="34" fill="#e6edf3" font-size="17" font-weight="700">tare — token reduction by content type</text>
   <text x="24" y="53" fill="#8b949e" font-size="12">measured in-repo (o200k tokens); opt-in lossy</text>
 
   <!-- scale: 100% = 420px, bars start at x=250 -->

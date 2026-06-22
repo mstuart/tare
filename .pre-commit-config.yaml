@@ -1,4 +1,4 @@
-# Pre-commit hooks for cull. Install with: pip install pre-commit && pre-commit install
+# Pre-commit hooks for tare. Install with: pip install pre-commit && pre-commit install
 repos:
   - repo: local
     hooks:

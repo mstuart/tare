@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with cull
+description: Report a problem with tare
 labels: [bug]
 body:
   - type: textarea
@@ -12,7 +12,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: cull version / commit
+      label: tare version / commit
     validations:
       required: true
   - type: dropdown

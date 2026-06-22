@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/cull-core",
-    "crates/cull-tokenize",
-    "crates/cull-cache",
-    "crates/cull-proxy",
-    "crates/cull-bench",
-    "crates/cull-cli",
-    "crates/cull-mcp",
+    "crates/tare-core",
+    "crates/tare-tokenize",
+    "crates/tare-cache",
+    "crates/tare-proxy",
+    "crates/tare-bench",
+    "crates/tare-cli",
+    "crates/tare-mcp",
 ]
 
 [workspace.package]
@@ -16,8 +16,8 @@ edition = "2021"
 rust-version = "1.82"
 license = "MIT"
 description = "Query-aware, cache-correct, lossless-by-default context compression for LLM coding agents."
-repository = "https://github.com/mstuart/cull"
-homepage = "https://github.com/mstuart/cull"
+repository = "https://github.com/mstuart/tare"
+homepage = "https://github.com/mstuart/tare"
 readme = "README.md"
 authors = ["Mark Stuart <stuartmark@gmail.com>"]
 keywords = ["llm", "context", "compression", "proxy", "tokens"]

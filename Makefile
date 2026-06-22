@@ -19,10 +19,10 @@ deny:
 	cargo deny check
 
 proxy:
-	cargo run --release -p cull-proxy
+	cargo run --release -p tare-proxy
 
 bench:
-	cargo run --release -p cull-bench
+	cargo run --release -p tare-bench
 
 # The full CI gate, locally.
 check:
