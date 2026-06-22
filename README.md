@@ -105,6 +105,8 @@ what it did: `x-cull-net-tokens`, `x-cull-dropped`, `x-cull-aggression`, `x-cull
 
 ## Proof
 
+<p align="center"><img src="docs/assets/savings.svg" alt="cull token reduction by content type" width="680"></p>
+
 Measured in this repo (o200k tokens), reproducible with the commands shown:
 
 | What | Result | Reproduce |
