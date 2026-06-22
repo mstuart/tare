@@ -6,17 +6,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
-RUN cargo build --release -p cull-proxy
+RUN cargo build --release -p tare-proxy
 
 # --- runtime stage ---
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -u 10001 cull
-COPY --from=builder /app/target/release/cull-proxy /usr/local/bin/cull-proxy
-USER cull
-ENV CULL_PORT=8787 \
-    CULL_UPSTREAM=https://api.anthropic.com
+    && useradd -m -u 10001 tare
+COPY --from=builder /app/target/release/tare-proxy /usr/local/bin/tare-proxy
+USER tare
+ENV TARE_PORT=8787 \
+    TARE_UPSTREAM=https://api.anthropic.com
 EXPOSE 8787
-ENTRYPOINT ["cull-proxy"]
+ENTRYPOINT ["tare-proxy"]

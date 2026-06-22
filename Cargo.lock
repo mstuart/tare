@@ -569,80 +569,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
-name = "cull-bench"
-version = "0.1.0"
-dependencies = [
- "cull-core",
- "cull-tokenize",
-]
-
-[[package]]
-name = "cull-cache"
-version = "0.1.0"
-
-[[package]]
-name = "cull-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "cull-core",
- "cull-tokenize",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cull-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cull-tokenize",
- "diffy",
- "fastembed",
- "regex",
- "serde",
- "serde_json",
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "xxhash-rust",
-]
-
-[[package]]
-name = "cull-mcp"
-version = "0.1.0"
-dependencies = [
- "cull-cli",
- "cull-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cull-proxy"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "axum",
- "bytes",
- "cull-cache",
- "cull-core",
- "cull-tokenize",
- "futures-util",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cull-tokenize"
-version = "0.1.0"
-
-[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2685,6 +2611,80 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "tare-bench"
+version = "0.1.0"
+dependencies = [
+ "tare-core",
+ "tare-tokenize",
+]
+
+[[package]]
+name = "tare-cache"
+version = "0.1.0"
+
+[[package]]
+name = "tare-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "tare-core",
+ "tare-tokenize",
+]
+
+[[package]]
+name = "tare-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "diffy",
+ "fastembed",
+ "regex",
+ "serde",
+ "serde_json",
+ "tare-tokenize",
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "tare-mcp"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tare-cli",
+ "tare-core",
+]
+
+[[package]]
+name = "tare-proxy"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "axum",
+ "bytes",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tare-cache",
+ "tare-core",
+ "tare-tokenize",
+ "tokio",
+]
+
+[[package]]
+name = "tare-tokenize"
+version = "0.1.0"
 
 [[package]]
 name = "tempfile"

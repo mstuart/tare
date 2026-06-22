@@ -1,0 +1,23 @@
+[package]
+name = "tare-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Model Context Protocol (stdio) server exposing Tare's compression tools and a reversible expand tool."
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "tare-mcp"
+path = "src/main.rs"
+
+[dependencies]
+tare-core = { path = "../tare-core", version = "0.1.0" }
+tare-cli = { path = "../tare-cli", version = "0.1.0" }
+serde = { workspace = true }
+serde_json = "1"

@@ -9,3 +9,7 @@ vexp.toml
 
 # internal build scaffolding (AI session plans / specs / ledger) — not for public consumption
 /docs/superpowers/
+
+# Python bytecode
+__pycache__/
+*.pyc

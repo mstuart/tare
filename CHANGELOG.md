@@ -18,14 +18,14 @@ Initial public release.
 - **Opt-in lossy levers**: large-array row-capping, per-line field truncation, token-level
   telegraphic NL compaction, and **AST code skeletonization** (tree-sitter; keep
   signatures/types/imports, drop function bodies — reversible by re-reading).
-- **HTTP proxy** (`cull-proxy`) speaking Anthropic (`/v1/messages`) and OpenAI
+- **HTTP proxy** (`tare-proxy`) speaking Anthropic (`/v1/messages`) and OpenAI
   (`/v1/chat/completions`), with a **closed-loop controller**: per-session aggression driven by
   cache-hit-rate (halt), output-verbosity (back off), and context-fill (compress harder). Cache-
   prefix-boundary aware; bounded body buffering and upstream timeouts.
-- **CLI** (`cull`): `compress`, `slim-schema`, `compact-lossy`, `skeletonize`.
-- **MCP server** (`cull-mcp`): a stdio JSON-RPC server exposing `cull_compress`, `cull_skeletonize`,
-  `cull_compact_lossy`, a reversible **`cull_expand`** (retrieve originals by id), and `cull_stats`.
-- Competitive benchmarks under `crates/cull-bench/benchmarks/`.
+- **CLI** (`tare`): `compress`, `slim-schema`, `compact-lossy`, `skeletonize`.
+- **MCP server** (`tare-mcp`): a stdio JSON-RPC server exposing `tare_compress`, `tare_skeletonize`,
+  `tare_compact_lossy`, a reversible **`tare_expand`** (retrieve originals by id), and `tare_stats`.
+- Competitive benchmarks under `crates/tare-bench/benchmarks/`.
 
-[Unreleased]: https://github.com/mstuart/cull/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/mstuart/cull/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mstuart/tare/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mstuart/tare/releases/tag/v0.1.0

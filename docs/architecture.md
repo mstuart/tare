@@ -5,7 +5,7 @@
       │  prompts · tool outputs · logs · file reads · RAG results
       ▼
   ┌──────────────────────────────────────────────────────────┐
-  │  cull   (runs locally — your data and API key stay here)  │
+  │  tare   (runs locally — your data and API key stay here)  │
   │  cache-boundary detect → only touch the dynamic suffix    │
   │  lossless passes:  supersession · IVM/delta · dedup ·     │
   │                    columnar JSON/log · schema-slim ·      │
@@ -24,15 +24,15 @@
 
 | Crate | Role |
 |---|---|
-| `cull-core` | the compression engine: segmenter, passes, planner, lossless + lossy transforms, skeletonizer |
-| `cull-tokenize` | fast approximate token counter (chars/4) |
-| `cull-cache` | provider cache models / hit-rate floors |
-| `cull-proxy` | the HTTP proxy + closed-loop controller + sensors |
-| `cull-cli` | the `cull` command |
+| `tare-core` | the compression engine: segmenter, passes, planner, lossless + lossy transforms, skeletonizer |
+| `tare-tokenize` | fast approximate token counter (chars/4) |
+| `tare-cache` | provider cache models / hit-rate floors |
+| `tare-proxy` | the HTTP proxy + closed-loop controller + sensors |
+| `tare-cli` | the `tare` command |
 
 ## The closed-loop controller
 
-Most compressors optimize *input tokens removed*, one-way and blind. cull's proxy runs a per-session
+Most compressors optimize *input tokens removed*, one-way and blind. tare's proxy runs a per-session
 controller that reads three live signals and dials aggression:
 
 - **cache-hit-rate** — if compression is busting the provider's prefix cache, **halt** (passthrough).

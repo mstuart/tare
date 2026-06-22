@@ -1,11 +1,11 @@
 services:
-  cull-proxy:
+  tare-proxy:
     build: .
-    image: cull-proxy:latest
+    image: tare-proxy:latest
     ports:
       - "8787:8787"
     environment:
-      CULL_UPSTREAM: https://api.anthropic.com
-      CULL_PORT: "8787"
-      # CULL_CONTEXT_LIMIT: "200000"   # set lower for smaller-window models
+      TARE_UPSTREAM: https://api.anthropic.com
+      TARE_PORT: "8787"
+      # TARE_CONTEXT_LIMIT: "200000"   # set lower for smaller-window models
     restart: unless-stopped

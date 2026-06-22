@@ -1,8 +1,8 @@
-# cull
+# tare
 
 **Lossless-by-default context compression for LLM coding agents.**
 
-cull sits between an agent and the model API and shrinks the context window. Unlike most compressors
+tare sits between an agent and the model API and shrinks the context window. Unlike most compressors
 it is:
 
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
