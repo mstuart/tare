@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="220" viewBox="0 0 700 220" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <rect width="700" height="220" rx="10" fill="#0d1117"/>
+  <text x="24" y="34" fill="#e6edf3" font-size="17" font-weight="700">cull — token reduction by content type</text>
+  <text x="24" y="53" fill="#8b949e" font-size="12">measured in-repo (o200k tokens); opt-in lossy</text>
+
+  <!-- scale: 100% = 420px, bars start at x=250 -->
+  <!-- row 1: code skeleton — 65% → 273px -->
+  <text x="24" y="90" fill="#e6edf3" font-size="13">Code reads (AST skeleton)</text>
+  <rect x="250" y="74" width="273" height="24" rx="4" fill="#238636"/>
+  <text x="515" y="91" fill="#ffffff" font-size="13" font-weight="700" text-anchor="end">65%</text>
+
+  <!-- row 2: json — 98% → 412px -->
+  <text x="24" y="130" fill="#e6edf3" font-size="13">JSON arrays (lossy)</text>
+  <rect x="250" y="114" width="412" height="24" rx="4" fill="#2ea043"/>
+  <text x="654" y="131" fill="#ffffff" font-size="13" font-weight="700" text-anchor="end">98%</text>
+
+  <!-- row 3: ps aux — 91% → 382px -->
+  <text x="24" y="170" fill="#e6edf3" font-size="13">Command output (ps aux, lossy)</text>
+  <rect x="250" y="154" width="382" height="24" rx="4" fill="#3fb950"/>
+  <text x="624" y="171" fill="#0d1117" font-size="13" font-weight="700" text-anchor="end">91%</text>
+
+  <text x="24" y="205" fill="#8b949e" font-size="11">Code reads are ~67–76% of a coding agent's tokens — skeletonization is the biggest lever, reversible by re-reading.</text>
+</svg>
