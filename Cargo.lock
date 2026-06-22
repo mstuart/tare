@@ -612,6 +612,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cull-mcp"
+version = "0.1.0"
+dependencies = [
+ "cull-cli",
+ "cull-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cull-proxy"
 version = "0.1.0"
 dependencies = [
