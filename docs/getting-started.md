@@ -43,3 +43,15 @@ ps aux         | cull compact-lossy --max-rows 30 --max-field 110
 ```
 
 See the [CLI reference](cli.md) for all subcommands.
+
+## As an MCP server
+
+`cull-mcp` is a stdio MCP server. Point any MCP client at the `cull-mcp` binary; it exposes
+`cull_skeletonize`, `cull_compact_lossy`, `cull_compress`, `cull_stats`, and a reversible
+**`cull_expand`** — when a tool compacts something it returns an `id`, and `cull_expand({id})` returns
+the exact original (CCR-style retrieval), so the agent can drill back in on demand.
+
+```jsonc
+// example MCP client config
+{ "mcpServers": { "cull": { "command": "cull-mcp" } } }
+```
