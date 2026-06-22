@@ -13,6 +13,7 @@
 <p align="center">
   <a href="https://github.com/mstuart/cull/actions/workflows/ci.yml"><img src="https://github.com/mstuart/cull/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://mstuart.github.io/cull/"><img src="https://img.shields.io/badge/docs-online-blue.svg" alt="Docs"></a>
   <img src="https://img.shields.io/badge/rust-1.82%2B-orange.svg" alt="Rust 1.82+">
   <img src="https://img.shields.io/badge/status-pre--1.0-yellow.svg" alt="pre-1.0">
 </p>
