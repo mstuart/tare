@@ -23,6 +23,8 @@ Initial public release.
   cache-hit-rate (halt), output-verbosity (back off), and context-fill (compress harder). Cache-
   prefix-boundary aware; bounded body buffering and upstream timeouts.
 - **CLI** (`cull`): `compress`, `slim-schema`, `compact-lossy`, `skeletonize`.
+- **MCP server** (`cull-mcp`): a stdio JSON-RPC server exposing `cull_compress`, `cull_skeletonize`,
+  `cull_compact_lossy`, a reversible **`cull_expand`** (retrieve originals by id), and `cull_stats`.
 - Competitive benchmarks under `crates/cull-bench/benchmarks/`.
 
 [Unreleased]: https://github.com/mstuart/cull/compare/v0.1.0...HEAD

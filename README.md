@@ -8,7 +8,7 @@
      Lossless-by-default context compression for LLM coding agents
 </pre></div>
 
-<p align="center"><strong>lossless by default · query-aware · cache-correct · closed-loop · proxy · library · CLI · local</strong></p>
+<p align="center"><strong>lossless by default · query-aware · cache-correct · closed-loop · proxy · library · CLI · MCP · local</strong></p>
 
 <p align="center">
   <a href="https://github.com/mstuart/cull/actions/workflows/ci.yml"><img src="https://github.com/mstuart/cull/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -42,6 +42,8 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 - **Proxy** — `cull-proxy`, point your agent's base URL at it; zero code changes, any language.
 - **Library** — call the `cull-core` engine directly from Rust.
 - **CLI** — `cull compress | slim-schema | compact-lossy | skeletonize` for one-shot transforms.
+- **MCP server** — `cull-mcp` exposes `cull_skeletonize` / `cull_compact_lossy` / `cull_compress` plus
+  a reversible **`cull_expand`** (retrieve any original by id) to any MCP client.
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
   it only drops information when you explicitly opt in.
 - **Cache-correct** — detects the provider's cache breakpoint and only compresses the dynamic suffix,
@@ -127,7 +129,7 @@ output — none of the others do all four.
 
 |  | Scope | Deploy | Local | Lossless default | Output-aware |
 |---|---|---|:-:|:-:|:-:|
-| **cull** | tools · logs · files · JSON · history | proxy · library · CLI | ✅ | ✅ | ✅ |
+| **cull** | tools · logs · files · JSON · history | proxy · library · CLI · MCP | ✅ | ✅ | ✅ |
 | [Headroom](https://github.com/chopratejas/headroom) | all context | proxy · lib · MCP | ✅ | ❌ (reversible via cache) | ❌ |
 | [RTK](https://github.com/rtk-ai/rtk) | CLI command outputs | CLI wrapper | ✅ | ❌ | ❌ |
 | [lean-ctx](https://github.com/yvgude/lean-ctx) | CLI commands, MCP tools | CLI · MCP | ✅ | ❌ | ❌ |
@@ -167,6 +169,7 @@ output — none of the others do all four.
 | `cull-cache` | provider cache models / hit-rate floors |
 | `cull-proxy` | the HTTP proxy + closed-loop controller + sensors |
 | `cull-cli` | the `cull` command |
+| `cull-mcp` | MCP (stdio) server: compression tools + a reversible `cull_expand` |
 | `cull-bench` | competitive benchmarks (not published) |
 
 ## Status & limitations
