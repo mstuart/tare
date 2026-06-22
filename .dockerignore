@@ -1,0 +1,8 @@
+target/
+.git/
+.github/
+.vexp/
+.fastembed_cache/
+docs/
+*.gif
+*.png
