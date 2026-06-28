@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <rect width="800" height="200" rx="16" fill="#0d1117"/>
+  <rect x="0.5" y="0.5" width="799" height="199" rx="16" fill="none" stroke="#30363d"/>
+  <!-- centered lockup: badge + wordmark, tagline centered beneath -->
+  <g transform="translate(257,38)">
+    <rect width="96" height="96" rx="24" fill="#238636"/>
+    <g transform="translate(48,18) scale(0.62)" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <line x1="0" y1="10" x2="0" y2="80"/>
+      <line x1="-22" y1="84" x2="22" y2="84"/>
+      <line x1="-42" y1="16" x2="42" y2="16"/>
+      <line x1="-42" y1="16" x2="-42" y2="32"/>
+      <path d="M-55 32 a13 13 0 0 0 26 0"/>
+      <line x1="42" y1="16" x2="42" y2="32"/>
+      <path d="M29 32 a13 13 0 0 0 26 0"/>
+      <circle cx="0" cy="10" r="6" fill="#ffffff" stroke="none"/>
+    </g>
+  </g>
+  <text x="383" y="120" fill="#e6edf3" font-size="92" font-weight="800" letter-spacing="-3">tare</text>
+  <text x="400" y="154" text-anchor="middle" fill="#8b949e" font-size="16" font-weight="500">lossless context compression for LLM coding agents</text>
+</svg>

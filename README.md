@@ -1,12 +1,6 @@
-<div align="center"><pre>
-████████╗ █████╗ ██████╗ ███████╗
-╚══██╔══╝██╔══██╗██╔══██╗██╔════╝
-   ██║   ███████║██████╔╝█████╗
-   ██║   ██╔══██║██╔══██╗██╔══╝
-   ██║   ██║  ██║██║  ██║███████╗
-   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
-     Lossless-by-default context compression for LLM coding agents
-</pre></div>
+<div align="center">
+  <img src="docs/assets/logo.svg" alt="tare — lossless context compression for LLM coding agents" width="720">
+</div>
 
 <p align="center"><strong>lossless by default · query-aware · cache-correct · closed-loop · proxy · library · CLI · MCP · local</strong></p>
 
