@@ -4,7 +4,11 @@
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+ignore = [
+    # paste: unmaintained (feature-complete proc-macro). No fix exists; pulled transitively, no
+    # security impact. (anyhow's RUSTSEC-2026-0190 is fixed by the 1.0.103 bump, not ignored.)
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 version = 2
