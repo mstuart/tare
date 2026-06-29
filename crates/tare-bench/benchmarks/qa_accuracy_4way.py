@@ -38,11 +38,16 @@ def headroom_smartcrusher_c(text):
             return text
 
 def leanctx_c(text):
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-        f.write(text); path = f.name
-    out = subprocess.run([LEANCTX, "-c", f"cat {path}"], capture_output=True, text=True).stdout
-    os.unlink(path)
-    return out
+    if not os.path.isfile(LEANCTX) or not os.access(LEANCTX, os.X_OK):
+        return None  # detected in main(); excluded from comparison
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write(text); path = f.name
+        out = subprocess.run([LEANCTX, "-c", f"cat {path}"], capture_output=True, text=True)
+        os.unlink(path)
+        return out.stdout if (out.returncode == 0 and out.stdout) else None
+    except Exception:
+        return None
 
 def build_cases():
     cases = []
@@ -85,7 +90,11 @@ def main():
         return tok.decode(out[0][ins.input_ids.shape[1]:], skip_special_tokens=True)
 
     variants = [("uncompressed", lambda t: t), ("tare", tare_c), ("headroom", headroom_c),
-                ("headroom-crush", headroom_smartcrusher_c), ("lean-ctx", leanctx_c)]
+                ("headroom-crush", headroom_smartcrusher_c)]
+    if os.path.isfile(LEANCTX) and os.access(LEANCTX, os.X_OK):
+        variants.append(("lean-ctx", leanctx_c))
+    else:
+        print("lean-ctx unavailable, excluded", file=sys.stderr)
     cases = build_cases()
     agg = {n: {"correct": 0, "ratios": []} for n, _ in variants}
     print(f"Model: {MODEL}   ({len(cases)} QA cases)\n")
@@ -95,6 +104,8 @@ def main():
         before = ntok(ctx)
         for name, fn in variants:
             comp = fn(ctx)
+            if comp is None:
+                continue  # lean-ctx (or another variant) failed mid-run; skip rather than passthrough
             ans = answer(comp, q)
             ok = gt.lower() in ans.lower()
             agg[name]["correct"] += ok
