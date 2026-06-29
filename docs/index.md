@@ -17,5 +17,5 @@ Use it three ways: as an HTTP **proxy** (zero code changes), as a Rust **library
 → [Getting started](getting-started.md) · [Architecture](architecture.md) · [Benchmarks](benchmarks.md)
 
 !!! note "Status"
-    Pre-1.0. Well-tested (154 tests) and benchmarked, but not yet exercised against a live model API.
-    See the README's Status section before deploying.
+    Pre-1.0. Well-tested (160 tests), benchmarked, and smoke-tested against the live Anthropic API on a
+    Claude subscription — but not yet production-hardened. See the README's Status section before deploying.

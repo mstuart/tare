@@ -29,9 +29,10 @@ it is **lossless by default**, **cache-correct** (it never rewrites the provider
 **closed-loop** — it watches the model's *output* and adapts. Opt in and it compresses aggressively:
 row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
-> **Status: pre-1.0, not yet exercised against a live model API.** The engine is well-tested (154
-> tests) and beats incumbents on the included benchmarks, but read [Status & limitations](#status--limitations)
-> before deploying.
+> **Status: pre-1.0.** The engine is well-tested (160 tests) and beats incumbents on the included
+> benchmarks, and has been smoke-tested end-to-end against the live Anthropic API — through the proxy
+> on a Claude subscription and via the MCP server — but it is not yet production-hardened. Read
+> [Status & limitations](#status--limitations) before deploying.
 
 ## What it does
 
@@ -103,8 +104,12 @@ what it did: `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`, `x-tare
 
 ## Use with your Claude subscription — MCP, no API key
 
-The proxy above forwards your `x-api-key`, so it needs a billable Anthropic API key. To run tare on a
-**Claude Pro/Max subscription instead**, use the MCP server: `tare-mcp` is a local stdio process your agent
+The proxy forwards whatever auth the client sends, so it works two ways. With a **billable API key** the
+client sends `x-api-key` and the proxy passes it through. On a **Claude Pro/Max subscription** instead,
+point Claude Code's `ANTHROPIC_BASE_URL` at the proxy — it forwards your subscription OAuth token
+upstream, **no API key required** (`scripts/live-smoke-sub.sh` runs exactly this round-trip).
+
+Prefer not to redirect a base URL at all? Use the MCP server: `tare-mcp` is a local stdio process your agent
 launches and calls as tools — it never calls the model itself, so it needs **no API key** and rides on
 whatever auth the host already has (your Claude Code `/login` subscription, or any MCP client).
 
@@ -201,14 +206,18 @@ output — none of the others do all four.
 
 ## Status & limitations
 
-- **No published release** — v0.1.0 is tagged but not yet pushed to crates.io.
-- **3 startup `.expect()` calls in `tare-proxy/main.rs`** — these fail-fast on bind/listen failure
-  (appropriate), but the proxy has not been stress-tested against hostile input in a live environment.
+- **v0.1.0** is tagged and published as a GitHub release; **not yet on crates.io** — build from source
+  or `cargo install --git` for now.
+- **Live-smoke-tested, not production-hardened** — one full round-trip through `tare-proxy` against the
+  live Anthropic API on a Claude subscription (`scripts/live-smoke-sub.sh`), plus the MCP server driven
+  over real stdio JSON-RPC, on top of 160 unit/integration tests against mock upstreams. Not yet load- or
+  hostile-input-tested in production.
+- Startup failures (HTTP client build, port bind, serve) exit with a clear `[tare-proxy] fatal: …`
+  message and a non-zero status rather than a panic backtrace.
 - The context-fill signal counts the serialized request (incl. JSON envelope), so it slightly
   over-estimates true fill (conservative — errs toward compressing sooner).
 - A `>2 MB` *streaming* response whose final usage event straddles the 64 KB tail buffer may skip one
   verbosity sample (non-fatal).
-- **Never run against a live model API** — verified against mock upstreams + 154 unit/integration tests.
 
 ## Contributing
 
