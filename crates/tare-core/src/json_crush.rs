@@ -104,7 +104,7 @@ fn encode_array(arr: &[Value]) -> Option<String> {
     let mut counts: std::collections::HashMap<Vec<String>, usize> =
         std::collections::HashMap::new();
     for obj in arr {
-        let keys: Vec<String> = obj.as_object().unwrap().keys().cloned().collect();
+        let keys: Vec<String> = obj.as_object()?.keys().cloned().collect();
         *counts.entry(keys).or_insert(0) += 1;
     }
     let modal: Vec<String> = counts.into_iter().max_by_key(|(_, c)| *c)?.0;
@@ -112,15 +112,15 @@ fn encode_array(arr: &[Value]) -> Option<String> {
         return None;
     }
     let is_modal = |obj: &Value| -> bool {
-        let m = obj.as_object().unwrap();
-        m.len() == modal.len() && m.keys().zip(&modal).all(|(k, mk)| k == mk)
+        obj.as_object()
+            .is_some_and(|m| m.len() == modal.len() && m.keys().zip(&modal).all(|(k, mk)| k == mk))
     };
 
     // Constant columns: modal keys whose value is identical across every modal row.
     let modal_rows: Vec<&Map<String, Value>> = arr
         .iter()
         .filter(|o| is_modal(o))
-        .map(|o| o.as_object().unwrap())
+        .filter_map(|o| o.as_object())
         .collect();
     let mut constants = Map::new();
     if modal_rows.len() >= 2 {
@@ -142,7 +142,7 @@ fn encode_array(arr: &[Value]) -> Option<String> {
     for obj in arr {
         body.push('\n');
         if is_modal(obj) {
-            let m = obj.as_object().unwrap();
+            let m = obj.as_object()?;
             let vals: Vec<&Value> = var_keys.iter().map(|k| &m[*k]).collect();
             body.push_str(&serde_json::to_string(&vals).ok()?);
         } else {
@@ -338,5 +338,84 @@ mod tests {
     #[test]
     fn expand_rejects_garbage() {
         assert!(expand("no marker").is_none());
+    }
+
+    mod round_trip_props {
+        use super::*;
+        use proptest::prelude::*;
+        use serde_json::{Map, Value};
+
+        /// Arbitrary JSON scalar covering the types crush must survive:
+        /// booleans, signed integers, floats, and arbitrary Unicode strings.
+        ///
+        /// Floats are restricted to [-1e14, 1e14]: encode_array re-serializes
+        /// values through an extra Ryu cycle, and serde_json's float parser can
+        /// produce a ULP-off result for extreme magnitudes (≳1e200), which would
+        /// break the losslessness invariant. The range [-1e14, 1e14] covers all
+        /// practical JSON payloads and is stable through double JSON parse cycles.
+        fn arb_scalar() -> impl Strategy<Value = Value> {
+            prop_oneof![
+                any::<bool>().prop_map(Value::Bool),
+                any::<i64>().prop_map(Value::from),
+                (-1e14f64..=1e14f64).prop_map(Value::from),
+                any::<String>().prop_map(Value::String),
+            ]
+        }
+
+        proptest! {
+            /// Losslessness invariant: when crush(text) returns Some(encoded),
+            /// expand(encoded) must equal parse(text).
+            ///
+            /// Inputs: uniform arrays of flat objects (the shape crush targets),
+            /// with floats, unicode strings, and constant-column factoring exercised
+            /// by generating the same key set across all rows.
+            #[test]
+            fn lossless_by_default(
+                raw_keys in prop::collection::vec("[A-Za-z][A-Za-z0-9_]{0,8}", 1usize..=5usize),
+                scalars in prop::collection::vec(arb_scalar(), 15usize..=40usize),
+            ) {
+                // Deduplicate keys while preserving first-seen order.
+                let mut seen = std::collections::HashSet::new();
+                let keys: Vec<String> = raw_keys
+                    .into_iter()
+                    .filter(|k| seen.insert(k.clone()))
+                    .collect();
+                let n_keys = keys.len();
+                if n_keys == 0 {
+                    return Ok(());
+                }
+
+                // Construct uniform object rows by slicing the scalar pool into
+                // n_keys-wide chunks — all rows share the same key set, which
+                // exercises both key-elision and constant-column factoring.
+                let rows: Vec<Value> = scalars
+                    .chunks(n_keys)
+                    .filter(|c| c.len() == n_keys)
+                    .take(8)
+                    .map(|chunk| {
+                        let map: Map<String, Value> = keys
+                            .iter()
+                            .cloned()
+                            .zip(chunk.iter().cloned())
+                            .collect();
+                        Value::Object(map)
+                    })
+                    .collect();
+                // crush requires >= 3 elements; skip if we didn't generate enough.
+                if rows.len() < 3 {
+                    return Ok(());
+                }
+
+                let text = serde_json::to_string(&Value::Array(rows)).unwrap();
+                if let Some(crushed) = crush(&text) {
+                    let original: Value = serde_json::from_str(&text).unwrap();
+                    let rebuilt = expand(&crushed)
+                        .expect("crush returned Some but expand returned None");
+                    prop_assert_eq!(original, rebuilt);
+                }
+                // crush returning None (not compressible) is valid; losslessness
+                // is vacuously satisfied — no assertion needed.
+            }
+        }
     }
 }

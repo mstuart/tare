@@ -34,7 +34,7 @@ impl FastEmbedder {
 
 impl Embedder for FastEmbedder {
     fn embed(&self, text: &str) -> Vec<f32> {
-        let mut guard = self.model.lock().expect("fastembed mutex poisoned");
+        let mut guard = self.model.lock().unwrap_or_else(|e| e.into_inner());
         match guard.embed(vec![text], None) {
             Ok(mut vecs) if !vecs.is_empty() => vecs.remove(0),
             _ => vec![0.0f32; self.dim],
