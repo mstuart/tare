@@ -85,16 +85,17 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 ## Get started (60 seconds)
 
 ```bash
-# 1 — build
-git clone https://github.com/mstuart/tare && cd tare
-cargo build --release            # builds target/release/{tare, tare-proxy}
+# 1 — install (no Rust toolchain needed)
+curl -fsSL https://raw.githubusercontent.com/mstuart/tare/main/install.sh | sh   # → ~/.local/bin
+# or:  npm install -g tare-ai
+# or:  git clone https://github.com/mstuart/tare && cd tare && cargo build --release
 
-# 2 — run as a proxy (point your agent's base URL at http://localhost:8787)
-TARE_UPSTREAM=https://api.anthropic.com ./target/release/tare-proxy
+# 2 — run as a proxy (point your agent's base URL at http://localhost:8787; zero code changes)
+TARE_UPSTREAM=https://api.anthropic.com tare-proxy
 
 # 3 — or use the CLI on any stdin
-cat big.rs | ./target/release/tare skeletonize --path big.rs    # drop fn bodies, keep structure
-ps aux     | ./target/release/tare compact-lossy --max-rows 30 --max-field 110
+cat big.rs | tare skeletonize --path big.rs    # drop fn bodies, keep structure
+ps aux     | tare compact-lossy --max-rows 30 --max-field 110
 ```
 
 Proxy env: `TARE_UPSTREAM` (default `https://api.anthropic.com`), `TARE_PORT` (`8787`),
@@ -114,9 +115,11 @@ launches and calls as tools — it never calls the model itself, so it needs **n
 whatever auth the host already has (your Claude Code `/login` subscription, or any MCP client).
 
 ```bash
-cargo build --release -p tare-mcp                 # builds target/release/tare-mcp
+# easiest — no build; npx fetches the prebuilt binary on first run:
+claude mcp add tare -s user -- npx -y -p tare-ai tare-mcp
 
-# register in Claude Code — user scope = every project (-s project writes .mcp.json instead)
+# or from a source build (user scope = every project; -s project writes .mcp.json instead):
+cargo build --release -p tare-mcp
 claude mcp add tare -s user "$(pwd)/target/release/tare-mcp"
 ```
 
@@ -126,7 +129,7 @@ same block into any other MCP client (Cursor, Codex, …):
 ```json
 {
   "mcpServers": {
-    "tare": { "type": "stdio", "command": "/abs/path/to/tare/target/release/tare-mcp", "args": [], "env": {} }
+    "tare": { "command": "npx", "args": ["-y", "-p", "tare-ai", "tare-mcp"] }
   }
 }
 ```

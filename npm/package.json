@@ -1,0 +1,45 @@
+{
+  "name": "tare-ai",
+  "version": "0.1.0",
+  "description": "Lossless-by-default context compression for LLM coding agents — HTTP proxy, CLI, and MCP server.",
+  "bin": {
+    "tare": "bin/tare.js",
+    "tare-proxy": "bin/tare-proxy.js",
+    "tare-mcp": "bin/tare-mcp.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "keywords": [
+    "llm",
+    "context",
+    "compression",
+    "mcp",
+    "proxy",
+    "claude",
+    "tokens",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mstuart/tare.git"
+  },
+  "homepage": "https://github.com/mstuart/tare",
+  "license": "MIT"
+}
