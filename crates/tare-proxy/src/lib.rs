@@ -313,11 +313,17 @@ pub fn compress_anthropic_request_reported(
     }
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
-    debug_assert_eq!(
-        plan.entries.len(),
-        locs.len(),
-        "one plan entry per collected tool_result"
-    );
+    // Invariant: planner produces one entry per collected tool_result. debug_assert is a no-op
+    // in --release, so a mismatch would silently zip-truncate and leave some tool_results
+    // unreplaced. Check at runtime: log and skip write-back entirely to avoid silent corruption.
+    if plan.entries.len() != locs.len() {
+        eprintln!(
+            "[tare-proxy] plan/locs length mismatch ({} vs {}); skipping write-back to avoid silent corruption",
+            plan.entries.len(),
+            locs.len()
+        );
+        return (out, None);
+    }
     let lossy_task = if task_text.is_empty() {
         None
     } else {
@@ -486,11 +492,17 @@ pub fn compress_openai_request_reported(
     }
 
     // write-back: apply Drop and Replace actions in place (panic-safe via get_mut chain)
-    debug_assert_eq!(
-        plan.entries.len(),
-        locs.len(),
-        "one plan entry per collected tool message"
-    );
+    // Invariant: planner produces one entry per collected tool message. debug_assert is a no-op
+    // in --release, so a mismatch would silently zip-truncate and leave some tool messages
+    // unreplaced. Check at runtime: log and skip write-back entirely to avoid silent corruption.
+    if plan.entries.len() != locs.len() {
+        eprintln!(
+            "[tare-proxy] plan/locs length mismatch ({} vs {}); skipping write-back to avoid silent corruption",
+            plan.entries.len(),
+            locs.len()
+        );
+        return (out, None);
+    }
     let lossy_task = if task.is_empty() {
         None
     } else {
