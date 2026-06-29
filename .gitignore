@@ -13,3 +13,8 @@ vexp.toml
 # Python bytecode
 __pycache__/
 *.pyc
+
+# npm wrapper: downloaded binaries + deps (regenerated on install)
+/npm/vendor/
+/npm/node_modules/
+/npm/*.tgz
