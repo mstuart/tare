@@ -63,7 +63,6 @@ jobs:
   npm-publish:
     name: publish npm
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +70,7 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
-      - name: Publish (skips if NPM_TOKEN is unset)
+      - name: Publish to npm (needs NPM_TOKEN; idempotent)
         working-directory: npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -81,5 +80,14 @@ jobs:
             echo "NPM_TOKEN secret not set — skipping npm publish."
             exit 0
           fi
-          npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+          # On a version tag, sync the package version to the tag; on manual dispatch, publish
+          # package.json's current version. Skip if that version is already on npm (idempotent).
+          case "$GITHUB_REF" in
+            refs/tags/*) npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}" ;;
+          esac
+          ver="$(node -p "require('./package.json').version")"
+          if npm view "tare-ai@${ver}" version >/dev/null 2>&1; then
+            echo "tare-ai@${ver} is already published — skipping."
+            exit 0
+          fi
           npm publish --access public
