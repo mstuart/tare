@@ -22,7 +22,7 @@ tare-core = { path = "../tare-core", version = "0.1.0" }
 tare-tokenize = { path = "../tare-tokenize", version = "0.1.0" }
 serde = { workspace = true }
 serde_json = "1"
-axum = "0.7"
+axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
 bytes = "1"
