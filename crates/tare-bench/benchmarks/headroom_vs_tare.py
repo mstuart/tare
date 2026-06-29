@@ -18,6 +18,7 @@ value-lossless (every field recoverable); Headroom's SmartCrusher only guarantee
 """
 import json
 import os
+import random
 import subprocess
 import sys
 
@@ -58,29 +59,46 @@ def main() -> int:
         return 2
 
     r = CompressionOnlyRunner()
+    random.seed(42)  # reproducibility: fix seed before any generator calls
     print(f"{'benchmark':<24} {'Headroom':>16} {'Tare':>16}   winner")
     print("-" * 74)
     wins = 0
     total = 0
 
-    # 1. CCR / needle retention (SmartCrusher vs Tare JSON columnar compaction)
-    hr = r.evaluate_ccr_lossless(r.generate_ccr_test_cases(50))
+    # 1. CCR / needle retention — generate ONCE; score BOTH with the same needle check
+    def _needle_ok(out: str, needles: list) -> bool:
+        return all(n.lower() in out.lower() for n in needles)
+
+    ccr_cases = r.generate_ccr_test_cases(50)
+    hr = r.evaluate_ccr_lossless(ccr_cases)
+
+    # Re-score headroom per-case with the same needle check used for tare (apples-to-apples accuracy)
+    try:
+        from headroom.transforms.smart_crusher import SmartCrusher as _SC, SmartCrusherConfig as _SCC
+        _crusher_ccr = _SC(config=_SCC())
+        hr_ccr_acc = sum(1 for c in ccr_cases
+                         if _needle_ok(_crusher_ccr.crush(c["content"]).compressed, c["needles"]))
+        hr_ccr_rate = hr_ccr_acc / len(ccr_cases)
+    except Exception:
+        hr_ccr_rate = hr.accuracy_rate  # fall back to headroom's own evaluator
+
     rs, acc = [], 0
-    for c in r.generate_ccr_test_cases(50):
+    for c in ccr_cases:
         out = tare_compress(c["content"])
         rs.append(1 - est(out) / est(c["content"]))
-        if all(n.lower() in out.lower() for n in c["needles"]):
+        if _needle_ok(out, c["needles"]):
             acc += 1
     total += 1
     win = sum(rs) / len(rs) > hr.avg_compression_ratio
     wins += win
-    print(f"{'CCR/needle':<24} {hr.avg_compression_ratio:>8.1%}/{hr.accuracy_rate:>3.0%} "
+    print(f"{'CCR/needle':<24} {hr.avg_compression_ratio:>8.1%}/{hr_ccr_rate:>3.0%} "
           f"{sum(rs)/len(rs):>8.1%}/{acc/len(rs):>3.0%}   {'TARE' if win else 'headroom'}")
 
     # 2. Information retention (ContentRouter vs Tare)
-    hr2 = r.evaluate_information_retention(r.generate_info_retention_cases(30))
+    info_cases = r.generate_info_retention_cases(30)
+    hr2 = r.evaluate_information_retention(info_cases)
     rs, acc = [], 0
-    for c in r.generate_info_retention_cases(30):
+    for c in info_cases:
         out = tare_compress(c["content"])
         rs.append(1 - est(out) / est(c["content"]))
         if sum(1 for f in c["probe_facts"] if f.lower() in out.lower()) / len(c["probe_facts"]) >= 0.9:
@@ -107,7 +125,11 @@ def main() -> int:
     print(f"{'tool-schema (opt-in lossy)':<24} {hr3.avg_compression_ratio:>8.1%}/{hr3.accuracy_rate:>3.0%} "
           f"{sum(rs)/len(rs):>8.1%}/{acc/len(rs):>3.0%}   {'TARE' if win else 'headroom'}")
 
-    # 4. Cross-turn agent context — Tare's turf (dedup + supersession across turns).
+    # 4. Cross-turn agent context — CROSS-TURN-SPECIFIC SCENARIO, NOT a general comparison.
+    #    This scenario is structurally favorable to Tare: identical file reads are repeated each
+    #    turn and test-run results are superseded turn-over-turn, exactly what Tare's cross-turn
+    #    dedup and supersession is designed for. Headroom compresses each blob independently and
+    #    cannot exploit cross-turn redundancy. Do not cite this result as a general benchmark.
     print("-" * 74)
     filetext = json.dumps([{"id": i, "name": f"sym_{i}", "kind": "fn"} for i in range(40)], indent=2)
     raw_blocks, tare_blocks = [], []
