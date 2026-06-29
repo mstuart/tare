@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c33e2818fa8928f8342c9412a0505f8601d2b4bcfedd631f69524d51c32c69c6 # shrinks to raw_keys = ["A"], scalars = [Number(1.7433178536157936e+266), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false), Bool(false)]
