@@ -15,11 +15,11 @@ lever.
 ## Competitive harnesses
 
 Head-to-head comparisons against Headroom, LLMLingua-2, lean-ctx, and RTK live in
-`crates/tare-bench/benchmarks/` (Python scripts that require the competitor tools installed). At
-**equal fidelity**, tare matches or beats each on every content type, and is the only one with a
-lossless mode and cross-turn dedup.
+`crates/tare-bench/benchmarks/` (Python scripts that require the competitor tools installed). Run the
+scripts there to reproduce; at **equal fidelity**, tare matches or beats each — and is the only one
+with a lossless mode and cross-turn dedup.
 
 !!! note
-    Numbers above are measured against mock upstreams and local inputs. tare has not yet been
-    exercised against a live model API end-to-end; a live smoke test requires an API key and is the
-    one remaining validation gap before a 1.0.
+    Numbers above are measured against local inputs. tare has been smoke-tested end-to-end against
+    the live Anthropic API — through the proxy on a Claude subscription (`scripts/live-smoke-sub.sh`)
+    and via the MCP server over real stdio — but is not yet production-hardened or load-tested.
