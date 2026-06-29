@@ -1,3 +1,4 @@
+use std::process::ExitCode;
 use std::sync::Arc;
 use tare_proxy::{
     server::{app, ProxyState},
@@ -5,7 +6,7 @@ use tare_proxy::{
 };
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     let upstream =
         std::env::var("TARE_UPSTREAM").unwrap_or_else(|_| "https://api.anthropic.com".into());
     let port: u16 = std::env::var("TARE_PORT")
@@ -21,11 +22,17 @@ async fn main() {
         .unwrap_or(true);
 
     // Timeouts so a slow/hung upstream can't pin a worker forever (overall + connect).
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
-        .expect("build reqwest client");
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[tare-proxy] fatal: could not build HTTP client: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let state = Arc::new(ProxyState {
         client,
         upstream,
@@ -38,9 +45,17 @@ async fn main() {
         outputs: Default::default(),
     });
 
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
-        .await
-        .expect("bind");
+    let listener = match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("[tare-proxy] fatal: could not bind 0.0.0.0:{port}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     eprintln!("[tare-proxy] listening on :{port} -> {}", state.upstream);
-    axum::serve(listener, app(state)).await.expect("serve");
+    if let Err(e) = axum::serve(listener, app(state)).await {
+        eprintln!("[tare-proxy] fatal: server error: {e}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
