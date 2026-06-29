@@ -1,3 +1,7 @@
+mod doctor;
+mod learn;
+mod perf;
+
 use clap::{Parser, Subcommand};
 use std::io::Read;
 use tare_cli::run_compress_with_budget;
@@ -57,6 +61,25 @@ enum Command {
         /// File path, used for language detection (.rs/.py/.js/.ts/.tsx/.go).
         #[arg(long)]
         path: String,
+    },
+    /// Health check: engine self-test, tokenizer sanity, config report, proxy probe, and learned
+    /// profile status. Exits non-zero if any ✗ check fails.
+    Doctor,
+    /// Measure compression savings and speed. Use --input to supply a file or directory; omit it
+    /// to run on a built-in representative sample corpus.
+    Perf {
+        /// File or directory to benchmark. Omit to use the built-in sample corpus.
+        #[arg(long)]
+        input: Option<std::path::PathBuf>,
+        /// Use the built-in sample corpus (same as omitting --input).
+        #[arg(long, default_value_t = false)]
+        sample: bool,
+    },
+    /// Derive and persist a compression profile by analysing files under DIR.
+    Learn {
+        /// Directory to read source/data files from.
+        #[arg(long)]
+        from: std::path::PathBuf,
     },
 }
 
@@ -138,6 +161,26 @@ fn main() {
             }
             let out = tare_core::code_skeleton::skeletonize(&input, &path).unwrap_or(input);
             println!("{out}");
+        }
+        Command::Doctor => {
+            let result = doctor::run();
+            if !result.ok {
+                std::process::exit(1);
+            }
+        }
+        Command::Perf { input, sample: _ } => match input {
+            Some(path) => {
+                perf::run_path(&path);
+            }
+            None => {
+                perf::run_sample();
+            }
+        },
+        Command::Learn { from } => {
+            if let Err(e) = learn::run(&from) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
         }
     }
 }
