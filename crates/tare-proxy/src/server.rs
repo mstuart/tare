@@ -271,6 +271,20 @@ async fn handle_generic(
             };
             builder = builder.header("x-tare-aggression", aggr_label);
 
+            // Opt-in request log (TARE_LOG): one line per turn with the compression report, so a
+            // live run (e.g. in front of a Claude subscription) is observable without a debugger.
+            if std::env::var_os("TARE_LOG").is_some() {
+                let (inp, net, dropped) = report
+                    .as_ref()
+                    .map(|r| (r.input_tokens, r.net_tokens, r.dropped))
+                    .unwrap_or((0, 0, 0));
+                eprintln!(
+                    "[tare-proxy] {} {upstream_path} in={inp} net={net} dropped={dropped} aggr={aggr_label}{}",
+                    status.as_u16(),
+                    if halted { " halted" } else { "" }
+                );
+            }
+
             // Tee: forward every chunk bit-exact while accumulating (a) a HEAD copy (cache usage in
             // the streaming `message_start`) and (b) a rolling TAIL (the final usage event carrying
             // `output_tokens`, which a head-only cap would miss on >2 MB responses, e.g. long
