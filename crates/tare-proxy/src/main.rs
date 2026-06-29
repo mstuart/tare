@@ -13,10 +13,18 @@ async fn main() -> ExitCode {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8787);
-    let recency_keep: usize = std::env::var("TARE_RECENCY")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(4);
+    let recency_keep: usize = if let Ok(v) = std::env::var("TARE_RECENCY") {
+        v.parse().unwrap_or(4)
+    } else if let Some(profile) = tare_core::profile::load() {
+        let n = profile.recommended_recency_keep;
+        eprintln!(
+            "[tare-proxy] loaded learned profile: {} (recency={n})",
+            profile.summary
+        );
+        n
+    } else {
+        4
+    };
     let enabled = std::env::var("TARE_ENABLED")
         .map(|v| v != "0" && v != "false")
         .unwrap_or(true);
