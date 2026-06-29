@@ -342,6 +342,10 @@ async fn handle_messages(State(state): State<Arc<ProxyState>>, req: Request) -> 
         Ok(b) => b,
         // Distinguish "too large" (hit MAX_BODY_BYTES) from a genuine read error (e.g. client
         // disconnect) so the caller gets a correct status, not a misleading 413.
+        // The real inner type is http_body_util::LengthLimitError (Display: "length limit
+        // exceeded"). A typed downcast via e.source().is::<LengthLimitError>() would be more
+        // robust but requires http-body-util as a direct dependency. Substring match is a
+        // stable fallback for axum 0.7 / http-body-util 0.1 — pinned by the test below.
         Err(e) => {
             let (code, msg) = if e.to_string().contains("length limit") {
                 (StatusCode::PAYLOAD_TOO_LARGE, "request body too large")
@@ -371,6 +375,10 @@ async fn handle_chat(State(state): State<Arc<ProxyState>>, req: Request) -> Resp
         Ok(b) => b,
         // Distinguish "too large" (hit MAX_BODY_BYTES) from a genuine read error (e.g. client
         // disconnect) so the caller gets a correct status, not a misleading 413.
+        // The real inner type is http_body_util::LengthLimitError (Display: "length limit
+        // exceeded"). A typed downcast via e.source().is::<LengthLimitError>() would be more
+        // robust but requires http-body-util as a direct dependency. Substring match is a
+        // stable fallback for axum 0.7 / http-body-util 0.1 — pinned by the test below.
         Err(e) => {
             let (code, msg) = if e.to_string().contains("length limit") {
                 (StatusCode::PAYLOAD_TOO_LARGE, "request body too large")
@@ -389,4 +397,23 @@ async fn handle_chat(State(state): State<Arc<ProxyState>>, req: Request) -> Resp
         compress_openai_request_reported,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::{to_bytes, Body};
+
+    /// Pins the 413 discrimination used in handle_messages / handle_chat: when axum::body::to_bytes
+    /// hits MAX_BODY_BYTES, the error's Display must contain "length limit". If a future bump to
+    /// axum or http-body-util changes this message, this test fails and prompts upgrading to the
+    /// typed downcast (e.source().is::<http_body_util::LengthLimitError>()).
+    #[tokio::test]
+    async fn length_limit_error_display_contains_length_limit() {
+        let big_body = Body::from(vec![0u8; 100]);
+        let err = to_bytes(big_body, 10).await.unwrap_err();
+        assert!(
+            err.to_string().contains("length limit"),
+            "length-limit error must contain 'length limit' for 413 discrimination: {err}"
+        );
+    }
 }
