@@ -42,3 +42,4 @@ pub mod code;
 pub mod code_skeleton;
 pub mod emit;
 pub use emit::{emit, EmittedSegment, FidelityReport};
+pub mod profile;

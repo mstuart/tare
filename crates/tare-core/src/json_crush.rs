@@ -217,7 +217,11 @@ pub fn crush(text: &str) -> Option<String> {
         )
     };
 
-    if out.len() < text.len() {
+    // Verify round-trip losslessness before returning. encode_array re-serializes values
+    // through an extra serde_json cycle; for extreme-magnitude floats or other edge cases
+    // the encoding must reproduce the identical Value. If it doesn't, fall back to None
+    // (caller uses the original text as-is — never emit a non-round-trippable encoding).
+    if out.len() < text.len() && expand(&out) == Some(value) {
         Some(out)
     } else {
         None
@@ -346,18 +350,15 @@ mod tests {
         use serde_json::{Map, Value};
 
         /// Arbitrary JSON scalar covering the types crush must survive:
-        /// booleans, signed integers, floats, and arbitrary Unicode strings.
-        ///
-        /// Floats are restricted to [-1e14, 1e14]: encode_array re-serializes
-        /// values through an extra Ryu cycle, and serde_json's float parser can
-        /// produce a ULP-off result for extreme magnitudes (≳1e200), which would
-        /// break the losslessness invariant. The range [-1e14, 1e14] covers all
-        /// practical JSON payloads and is stable through double JSON parse cycles.
+        /// booleans, signed integers, floats (full f64 range), and arbitrary Unicode strings.
+        /// Non-finite floats (NaN/inf) become Value::Null via serde_json's From<f64> impl,
+        /// which also round-trips cleanly. The verify-and-fallback in crush() guarantees
+        /// losslessness-or-None for all inputs, so no range restriction is needed.
         fn arb_scalar() -> impl Strategy<Value = Value> {
             prop_oneof![
                 any::<bool>().prop_map(Value::Bool),
                 any::<i64>().prop_map(Value::from),
-                (-1e14f64..=1e14f64).prop_map(Value::from),
+                any::<f64>().prop_map(Value::from),
                 any::<String>().prop_map(Value::String),
             ]
         }
