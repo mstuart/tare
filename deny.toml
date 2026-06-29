@@ -18,6 +18,10 @@ allow = [
     "Unicode-3.0",
     "BSL-1.0",              # xxhash-rust
     "CDLA-Permissive-2.0",  # webpki-roots
+    "BSD-2-Clause",         # av1-grain, rav1e, v_frame (AVIF/image viz stack)
+    "Zlib",                 # foldhash
+    "NCSA",                 # libfuzzer-sys
+    "MPL-2.0",              # option-ext (via dirs); weak file-level copyleft, fine as a dependency
 ]
 confidence-threshold = 0.8
 
