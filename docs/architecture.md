@@ -29,6 +29,8 @@
 | `tare-cache` | provider cache models / hit-rate floors |
 | `tare-proxy` | the HTTP proxy + closed-loop controller + sensors |
 | `tare-cli` | the `tare` command |
+| `tare-mcp` | MCP stdio server: compression tools + a reversible `tare_expand` |
+| `tare-bench` | competitive benchmarks (not published) |
 
 ## The closed-loop controller
 

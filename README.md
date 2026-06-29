@@ -2,7 +2,7 @@
   <img src="docs/assets/logo.svg" alt="tare — lossless context compression for LLM coding agents" width="720">
 </div>
 
-<p align="center"><strong>lossless by default · query-aware · cache-correct · closed-loop · proxy · library · CLI · MCP · local</strong></p>
+<p align="center"><strong>lossless by default · relevance-aware · cache-correct · closed-loop · proxy · library · CLI · MCP · local</strong></p>
 
 <p align="center">
   <a href="https://github.com/mstuart/tare/actions/workflows/ci.yml"><img src="https://github.com/mstuart/tare/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -29,8 +29,9 @@ it is **lossless by default**, **cache-correct** (it never rewrites the provider
 **closed-loop** — it watches the model's *output* and adapts. Opt in and it compresses aggressively:
 row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
-> **Status: pre-1.0.** The engine is well-tested (160 tests) and beats incumbents on the included
-> benchmarks, and has been smoke-tested end-to-end against the live Anthropic API — through the proxy
+> **Status: pre-1.0.** The engine is well-tested (150+ tests) and, on the included harness
+> (`crates/tare-bench/`), at equal fidelity matches or beats each competitor — reproduce with the
+> scripts there. It has been smoke-tested end-to-end against the live Anthropic API — through the proxy
 > on a Claude subscription and via the MCP server — but it is not yet production-hardened. Read
 > [Status & limitations](#status--limitations) before deploying.
 
@@ -154,8 +155,8 @@ Measured in this repo (o200k tokens), reproducible with the commands shown:
 
 Code reads are ~67–76% of a coding agent's tokens ([SWE-Pruner, ACL 2026](https://arxiv.org/abs/2601.16746)),
 so skeletonization is the single biggest lever. Competitive head-to-head harnesses (vs Headroom,
-LLMLingua-2, lean-ctx, RTK) live in `crates/tare-bench/benchmarks/`; at **equal fidelity** tare matches
-or beats each on every content type, and is the only one with a lossless mode and cross-turn dedup.
+LLMLingua-2, lean-ctx, RTK) live in `crates/tare-bench/benchmarks/` — run the scripts there to reproduce;
+at **equal fidelity** tare matches or beats each, and is the only one with a lossless mode and cross-turn dedup.
 
 ## Compared to
 
@@ -187,7 +188,7 @@ output — none of the others do all four.
 
 - **Lossless passes** — supersession (drop superseded tool outputs), IVM/delta (re-reads → diffs),
   envelope + exact dedup, columnar JSON & log re-encoding, JSON-Schema slimming, reasoning-trace
-  pruning, query-relevance pruning.
+  pruning, query-relevance pruning (keyword/symbol-based by default; neural embeddings opt-in via the `neural-embed` feature).
 - **Opt-in lossy** — large-array row-capping, per-line field truncation, token-level telegraphic NL
   compaction, **AST code skeletonization** (tree-sitter: rust/python/js/ts/go).
 - **Closed-loop controller** — per-session aggression from cache-hit-rate, output-verbosity, and
@@ -213,7 +214,7 @@ output — none of the others do all four.
   or `cargo install --git` for now.
 - **Live-smoke-tested, not production-hardened** — one full round-trip through `tare-proxy` against the
   live Anthropic API on a Claude subscription (`scripts/live-smoke-sub.sh`), plus the MCP server driven
-  over real stdio JSON-RPC, on top of 160 unit/integration tests against mock upstreams. Not yet load- or
+  over real stdio JSON-RPC, on top of 150+ unit, integration, and property tests against mock upstreams. Not yet load- or
   hostile-input-tested in production.
 - Startup failures (HTTP client build, port bind, serve) exit with a clear `[tare-proxy] fatal: …`
   message and a non-zero status rather than a panic backtrace.
