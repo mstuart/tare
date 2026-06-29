@@ -46,3 +46,48 @@ Reversible by re-reading. Supports rust/python/js/ts/go (by extension).
 ```bash
 cat big.rs | tare skeletonize --path big.rs
 ```
+
+## `tare doctor`
+
+Health check: engine self-test (json_crush round-trip, code skeleton, tokenizer sanity), resolved
+config report, best-effort proxy probe (TCP connect), and learned-profile status. Exits non-zero if
+any check (`✗`) fails; warnings (`⚠`) are advisory.
+
+No flags.
+
+```bash
+tare doctor
+```
+
+## `tare perf`
+
+Measure compression savings and wall-clock speed. Prints a table of original tokens, lossless tokens,
+lossless ratio, lossy tokens, and time per source. Omit `--input` (or pass `--sample`) to run on the
+built-in representative corpus.
+
+- `--input PATH` — file or directory to benchmark; files classified by extension.
+- `--sample` — use the built-in sample corpus (same as omitting `--input`).
+
+```bash
+tare perf --sample
+tare perf --input ./src
+```
+
+## `tare learn`
+
+Offline corpus analysis: reads every file under `DIR`, classifies each by extension
+(rs/py/js/ts/tsx/go → code; json → JSON; log → log; everything else → prose), measures lossless and
+lossy compression ratios, derives compression settings, and writes the result as
+`~/.config/tare/profile.json` (override with `$TARE_PROFILE`; `$XDG_CONFIG_HOME` is respected).
+The proxy reads this profile automatically on startup. This is static analysis of a local corpus, not
+online learning.
+
+- `--from DIR` — directory to read source/data files from (required).
+
+```bash
+tare learn --from ./logs
+# Learned profile from: ./logs
+#   files processed    : 42
+#   measured ratio     : 1.847x (lossless baseline)
+#   written to         : /Users/you/.config/tare/profile.json
+```

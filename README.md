@@ -39,7 +39,7 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
 - **Proxy** — `tare-proxy`, point your agent's base URL at it; zero code changes, any language.
 - **Library** — call the `tare-core` engine directly from Rust.
-- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize` for one-shot transforms.
+- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn` for one-shot transforms and diagnostics.
 - **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` plus
   a reversible **`tare_expand`** (retrieve any original by id) to any MCP client.
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
@@ -207,6 +207,22 @@ output — none of the others do all four.
 | `tare-cli` | the `tare` command |
 | `tare-mcp` | MCP (stdio) server: compression tools + a reversible `tare_expand` |
 | `tare-bench` | competitive benchmarks (not published) |
+
+## Diagnostics & tuning
+
+```bash
+# Health check — engine self-test, tokenizer sanity, config, proxy probe, learned-profile status.
+# Exits non-zero if any check fails.
+tare doctor
+
+# Measure compression savings and speed on a built-in sample corpus.
+tare perf --sample
+
+# Offline corpus analysis — reads files under ./logs, derives compression settings,
+# and writes ~/.config/tare/profile.json.  The proxy auto-loads this file on startup.
+# (Not online RL: learn analyses static files and produces a persisted profile.)
+tare learn --from ./logs
+```
 
 ## Status & limitations
 
