@@ -264,18 +264,26 @@ any base-URL override if it was configured directly in the agent's settings.
 
 <p align="center"><img src="docs/assets/savings.svg" alt="tare token reduction by content type" width="680"></p>
 
-Measured in this repo (o200k tokens), reproducible with the commands shown:
+All numbers are real — measured by running `target/release/tare` on the committed corpus.
+**Tokenizer:** tiktoken o200k_base (v0.13.0). Results committed to `crates/tare-bench/results/`;
+reproduce with `python3 crates/tare-bench/run_proof.py`.
 
-| What | Result | Reproduce |
-|---|---:|---|
-| **AST code skeletonization** on 31 real Rust files | **65.1%** smaller (57,199 → 19,988) | `tare skeletonize --path <f>` |
-| **`ps aux`** vs RTK at equal fidelity (same rows + columns) | **~4.5% smaller**, 5/5 trials | `ps aux \| tare compact-lossy --max-rows 30 --max-field 110` |
-| **Lossless** JSON / log columnar re-encode | smaller, **byte-recoverable** | `tare compress` |
+| Name | Content type | Command | Input tokens | Output tokens | Reduction |
+|---|---|---|---:|---:|---:|
+| cargo\_packages | json\_array | `tare compact-lossy` | 6,906 | 3,625 | **47.5%** |
+| ps\_aux | tabular | `tare compact-lossy` | 1,545 | 802 | **48.1%** |
+| app\_log | logs | `tare compact-lossy` | 13,217 | 6,551 | **50.4%** |
+| agent\_context | agent\_context | `tare compress` | 15,130 | 8,499 | **43.8%** |
+| server\_rs | code | `tare skeletonize --path server.rs` | 5,930 | 1,582 | **73.3%** |
+| json\_crush\_rs | code | `tare skeletonize --path json_crush.rs` | 3,937 | 1,607 | **59.2%** |
+| readme\_prose | prose | `tare compact-lossy` | 5,732 | 2,727 | **52.4%** |
 
 Code reads are ~67–76% of a coding agent's tokens ([SWE-Pruner, ACL 2026](https://arxiv.org/abs/2601.16746)),
-so skeletonization is the single biggest lever. Competitive head-to-head harnesses (vs Headroom,
-LLMLingua-2, lean-ctx, RTK) live in `crates/tare-bench/benchmarks/` — run the scripts there to reproduce;
-at **equal fidelity** tare matches or beats each, and is the only one with a lossless mode and cross-turn dedup.
+so skeletonization is the single biggest lever. The numbers above are tare-only; competitive
+head-to-head harnesses (vs Headroom, LLMLingua-2, lean-ctx, RTK) live in
+`crates/tare-bench/benchmarks/` — run the scripts there (with the competitor tools installed) to
+reproduce the comparison; at **equal fidelity** tare matches or beats each, and is the only one with
+a lossless mode and cross-turn dedup.
 
 ## Compared to
 
