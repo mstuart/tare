@@ -92,7 +92,7 @@ fn expand(text: &str) -> Option<String> {
 }
 
 #[pymodule]
-fn tare(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _tare(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compress, m)?)?;
     m.add_function(wrap_pyfunction!(skeletonize, m)?)?;
     m.add_function(wrap_pyfunction!(compact_lossy, m)?)?;

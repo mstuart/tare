@@ -11,7 +11,7 @@ description = "Python bindings for tare — query-aware LLM context compression.
 publish = false
 
 [lib]
-name = "tare"
+name = "_tare"
 crate-type = ["cdylib"]
 
 [dependencies]
