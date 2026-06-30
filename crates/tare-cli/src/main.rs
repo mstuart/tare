@@ -84,6 +84,10 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         max_rows: usize,
     },
+    /// Opt-in LOSSY image stripping (read from stdin): replace base64-encoded inline images with
+    /// compact `[tare-image id=… fmt=… ~NKB]` markers. Passes through unchanged if no inline images
+    /// are detected. The MCP tool is the reversible path; this CLI direction is one-way.
+    DerefImages,
     /// Health check: engine self-test, tokenizer sanity, config report, proxy probe, and learned
     /// profile status. Exits non-zero if any ✗ check fails.
     Doctor,
@@ -264,6 +268,32 @@ fn main() {
             };
             println!("{out}");
             eprintln!("[tare] in={in_bytes}B out={out_bytes}B ratio={ratio:.3}");
+        }
+        Command::DerefImages => {
+            let mut input = String::new();
+            if std::io::stdin().read_to_string(&mut input).is_err() {
+                eprintln!("error: failed to read stdin");
+                std::process::exit(1);
+            }
+            let in_bytes = input.len();
+            match tare_core::image_deref::deref(&input) {
+                Some(d) => {
+                    let out_bytes = d.text.len();
+                    let ratio = if in_bytes > 0 {
+                        out_bytes as f64 / in_bytes as f64
+                    } else {
+                        1.0
+                    };
+                    println!("{}", d.text);
+                    eprintln!(
+                        "[tare] in={in_bytes}B out={out_bytes}B images={} ratio={ratio:.3}",
+                        d.images.len()
+                    );
+                }
+                None => {
+                    println!("{input}");
+                }
+            }
         }
         Command::Doctor => {
             let result = doctor::run();

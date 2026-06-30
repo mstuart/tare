@@ -130,6 +130,17 @@ fn tool_specs() -> Value {
             "name": "tare_memory_stats",
             "description": "Aggregate statistics for the memory store: total count and distinct source count.",
             "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "tare_deref_images",
+            "description": "Replace inline base64 image data-URIs in text with compact [tare-image id=… fmt=… ~NKB] markers. Each image's original data-URI is stored and retrievable via tare_expand id=<id>. Returns the content unchanged if no images are found.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "text that may contain data:image/*;base64,… URIs"}
+                },
+                "required": ["content"]
+            }
         }
     ])
 }
@@ -287,6 +298,23 @@ fn call_tool(state: &mut State, name: &str, args: &Value) -> Result<String, Stri
                 ))
             }
         },
+        "tare_deref_images" => {
+            let content = args
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or("missing 'content'")?;
+            match tare_core::image_deref::deref(content) {
+                Some(d) => {
+                    state.saved_in += approx(content);
+                    state.saved_out += approx(&d.text);
+                    for img in &d.images {
+                        state.originals.insert(img.id.clone(), img.original.clone());
+                    }
+                    Ok(d.text)
+                }
+                None => Ok(content.to_string()),
+            }
+        }
         other => Err(format!("unknown tool '{other}'")),
     }
 }
@@ -378,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_has_all_nine() {
+    fn tools_list_has_all_ten() {
         let resp = handle(
             &mut State::default(),
             &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
@@ -401,6 +429,7 @@ mod tests {
             "tare_recall",
             "tare_forget",
             "tare_memory_stats",
+            "tare_deref_images",
         ] {
             assert!(names.contains(&n), "missing tool {n}");
         }
@@ -575,6 +604,49 @@ mod tests {
         // recall confirms gone
         let cv = tool_call(&mut s, "tare_recall", json!({"query": "to be forgotten"}));
         assert!(text_of(&cv).contains("no matches"));
+    }
+
+    // ── tare_deref_images ────────────────────────────────────────────────────
+
+    #[test]
+    fn deref_images_replaces_marker_and_expand_returns_original() {
+        // Minimal 1×1 transparent PNG in base64 (same fixture as image_deref tests).
+        let png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+        let uri = format!("data:image/png;base64,{png_b64}");
+        let content = format!("See this image: {uri} end");
+
+        let mut s = State::default();
+
+        // Call tare_deref_images.
+        let v = tool_call(&mut s, "tare_deref_images", json!({"content": content}));
+        assert!(!is_error(&v), "should not error");
+        let text = text_of(&v);
+
+        // Marker is present; raw base64 is gone.
+        assert!(text.contains("[tare-image"), "expected [tare-image marker");
+        assert!(!text.contains("base64,"), "base64 data should be replaced");
+
+        // Extract the id from the marker (format: [tare-image id=<8hex> fmt=…]).
+        let id_start = text.find("id=").unwrap() + "id=".len();
+        let id = &text[id_start..id_start + 8];
+
+        // tare_expand with that id returns the exact original data-URI.
+        let ev = tool_call(&mut s, "tare_expand", json!({"id": id}));
+        assert!(!is_error(&ev), "expand should succeed");
+        assert_eq!(
+            text_of(&ev),
+            uri,
+            "expand must return the exact original data-URI"
+        );
+    }
+
+    #[test]
+    fn deref_images_no_images_returns_unchanged() {
+        let mut s = State::default();
+        let content = "no images here, just plain text";
+        let v = tool_call(&mut s, "tare_deref_images", json!({"content": content}));
+        assert!(!is_error(&v));
+        assert_eq!(text_of(&v), content);
     }
 
     #[test]

@@ -45,4 +45,5 @@ pub mod csv_compact;
 pub mod emit;
 pub use emit::{emit, EmittedSegment, FidelityReport};
 pub mod html_compact;
+pub mod image_deref;
 pub mod profile;
