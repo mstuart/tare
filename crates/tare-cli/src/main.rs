@@ -67,6 +67,23 @@ enum Command {
         #[arg(long)]
         path: String,
     },
+    /// Opt-in LOSSY HTML compaction for LLM context (read from stdin): strip <script>, <style>,
+    /// and <svg> blocks; HTML comments; and noisy presentational attributes (style/class/data-*/on*).
+    /// Collapses whitespace and drops empty lines. Keeps text content and semantic tag structure.
+    /// Passthrough if the input is not HTML-ish or the result would not be smaller.
+    CompactHtml,
+    /// Opt-in LOSSY CSV/TSV row compaction for LLM context (read from stdin): detect the delimiter
+    /// (comma/tab), always keep the header and the first/last `boundary` data rows plus anomalous
+    /// rows (wrong column count or alert keywords), drop the uniform bulk with an explicit marker.
+    CompactCsv {
+        /// How many head and tail data rows to always keep (schema + recency). Default: 3.
+        #[arg(long, default_value_t = 3)]
+        boundary: usize,
+        /// Cap on total kept data rows; 0 = uncapped. Mandatory rows (boundary + anomalies) are
+        /// always kept regardless. Default: 0 (uncapped).
+        #[arg(long, default_value_t = 0)]
+        max_rows: usize,
+    },
     /// Health check: engine self-test, tokenizer sanity, config report, proxy probe, and learned
     /// profile status. Exits non-zero if any ✗ check fails.
     Doctor,
@@ -213,6 +230,40 @@ fn main() {
             }
             let out = tare_core::code_skeleton::skeletonize(&input, &path).unwrap_or(input);
             println!("{out}");
+        }
+        Command::CompactHtml => {
+            let mut input = String::new();
+            if std::io::stdin().read_to_string(&mut input).is_err() {
+                eprintln!("error: failed to read stdin");
+                std::process::exit(1);
+            }
+            let in_bytes = input.len();
+            let out = tare_core::html_compact::compact(&input).unwrap_or(input);
+            let out_bytes = out.len();
+            let ratio = if in_bytes > 0 {
+                out_bytes as f64 / in_bytes as f64
+            } else {
+                1.0
+            };
+            println!("{out}");
+            eprintln!("[tare] in={in_bytes}B out={out_bytes}B ratio={ratio:.3}");
+        }
+        Command::CompactCsv { boundary, max_rows } => {
+            let mut input = String::new();
+            if std::io::stdin().read_to_string(&mut input).is_err() {
+                eprintln!("error: failed to read stdin");
+                std::process::exit(1);
+            }
+            let in_bytes = input.len();
+            let out = tare_core::csv_compact::compact(&input, boundary, max_rows).unwrap_or(input);
+            let out_bytes = out.len();
+            let ratio = if in_bytes > 0 {
+                out_bytes as f64 / in_bytes as f64
+            } else {
+                1.0
+            };
+            println!("{out}");
+            eprintln!("[tare] in={in_bytes}B out={out_bytes}B ratio={ratio:.3}");
         }
         Command::Doctor => {
             let result = doctor::run();

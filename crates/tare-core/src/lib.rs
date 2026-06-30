@@ -41,6 +41,8 @@ pub mod telegraphic;
 pub use predicate::narrow_tool_call;
 pub mod code;
 pub mod code_skeleton;
+pub mod csv_compact;
 pub mod emit;
 pub use emit::{emit, EmittedSegment, FidelityReport};
+pub mod html_compact;
 pub mod profile;
