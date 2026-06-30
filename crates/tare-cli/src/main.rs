@@ -5,6 +5,7 @@ mod learn;
 mod output_savings;
 mod perf;
 mod update;
+mod wrap;
 
 use clap::{Parser, Subcommand};
 use std::io::Read;
@@ -108,6 +109,29 @@ enum Command {
         /// Only check the latest version and report; do not modify anything.
         #[arg(long, default_value_t = false)]
         check: bool,
+    },
+    /// Start the tare proxy and launch a coding agent through it, forwarding
+    /// ANTHROPIC_BASE_URL / OPENAI_BASE_URL / OPENAI_API_BASE to the agent process.
+    /// For GUI/extension agents (cursor, cline, continue, cortex) print setup instructions instead.
+    Wrap {
+        /// Agent to wrap: claude, codex, aider, goose, openhands, opencode, openclaw, vibe,
+        /// cursor, cline, continue, cortex.
+        agent: String,
+        /// Proxy port (defaults to $TARE_PORT or 8787).
+        #[arg(long)]
+        port: Option<u16>,
+        /// Dry-run: print what would happen and exit without starting anything.
+        #[arg(long, default_value_t = false)]
+        print: bool,
+        /// Extra arguments forwarded verbatim to the agent binary (after --).
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
+    /// Print instructions for removing the tare proxy override from an agent.
+    /// (Wrapping is ENV-based and ephemeral — there is no persistent state to remove.)
+    Unwrap {
+        /// Agent name (same set as `wrap`).
+        agent: String,
     },
 }
 
@@ -228,6 +252,23 @@ fn main() {
         }
         Command::Update { check } => {
             update::run(update::UpdateOpts { check });
+        }
+        Command::Wrap {
+            agent,
+            port,
+            print,
+            args,
+        } => {
+            let code = wrap::run_wrap(&agent, resolve_port(port), print, &args);
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
+        Command::Unwrap { agent } => {
+            let code = wrap::run_unwrap(&agent);
+            if code != 0 {
+                std::process::exit(code);
+            }
         }
     }
 }
