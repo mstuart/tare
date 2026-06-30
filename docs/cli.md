@@ -41,7 +41,7 @@ ps aux | tare compact-lossy --boundary 3 --max-rows 30 --max-field 110 --task "h
 ## `tare skeletonize`
 
 Drop function/method bodies from a source file, keeping signatures, types, imports, and doc comments.
-Reversible by re-reading. Supports rust/python/js/ts/go (by extension).
+Reversible by re-reading. Supports rust/python/js/ts/go/java/c/c++/perl (by extension).
 
 ```bash
 cat big.rs | tare skeletonize --path big.rs

@@ -232,7 +232,7 @@ output — none of the others do all four.
   envelope + exact dedup, columnar JSON & log re-encoding, JSON-Schema slimming, reasoning-trace
   pruning, query-relevance pruning (keyword/symbol-based by default; neural embeddings opt-in via the `neural-embed` feature).
 - **Opt-in lossy** — large-array row-capping, per-line field truncation, token-level telegraphic NL
-  compaction, **AST code skeletonization** (tree-sitter: rust/python/js/ts/go).
+  compaction, **AST code skeletonization** (tree-sitter: rust/python/js/ts/go/java/c/c++/perl).
 - **Closed-loop controller** — per-session aggression from cache-hit-rate, output-verbosity, and
   context-fill signals; cache-prefix-boundary aware; bounded body buffering and upstream timeouts.
 
