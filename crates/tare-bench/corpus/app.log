@@ -1,0 +1,400 @@
+2026-06-01T00:00:01.706Z INFO [scheduler] Token validated user_id=4013 scope=read
+2026-06-01T00:00:02.497Z WARN [api-gateway] slow query table=analytics duration_ms=9675 threshold_ms=200
+2026-06-01T00:00:03.726Z INFO [api-gateway] Cache hit key=session:3812 ttl_remaining=3421
+2026-06-01T00:00:05.137Z INFO [worker] Cache hit key=session:8929 ttl_remaining=3421
+2026-06-01T00:00:06.360Z DEBUG [worker] Rate limit check user_id=107 remaining=2616
+2026-06-01T00:00:08.196Z INFO [db-pool] Request received method=GET path=/api/v2/products latency_ms=3528 status=200
+2026-06-01T00:00:10.602Z INFO [api-gateway] Request received method=POST path=/api/v2/orders latency_ms=6225 status=201
+2026-06-01T00:00:11.115Z INFO [worker] Token validated user_id=712 scope=read
+2026-06-01T00:00:13.020Z DEBUG [api-gateway] Background job job=cleanup started
+2026-06-01T00:00:13.494Z INFO [scheduler] Config reload key=feature_flags changed=false
+2026-06-01T00:00:15.742Z DEBUG [worker] Cache miss key=product:1140 fetching from db
+2026-06-01T00:00:16.142Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=3815 status=201
+2026-06-01T00:00:18.349Z DEBUG [db-pool] Token validated user_id=5978 scope=write
+2026-06-01T00:00:19.006Z DEBUG [auth-service] Rate limit check user_id=1170 remaining=9981
+2026-06-01T00:00:20.703Z DEBUG [scheduler] Cache miss key=product:2678 fetching from db
+2026-06-01T00:00:22.020Z INFO [scheduler] Metrics flushed counters=3599 histograms=5314
+2026-06-01T00:00:24.175Z ERROR [api-gateway] connection timeout host=db-replica-2 attempt=526 retrying
+2026-06-01T00:00:26.246Z DEBUG [db-pool] DB query table=orders rows=3457 duration_ms=9293
+2026-06-01T00:00:28.474Z INFO [auth-service] Webhook delivered event=order.created latency_ms=6483
+2026-06-01T00:00:30.720Z INFO [cache] Request received method=GET path=/api/v2/products latency_ms=4340 status=200
+2026-06-01T00:00:31.327Z WARN [worker] cache eviction rate high evictions_per_min=9578
+2026-06-01T00:00:32.570Z DEBUG [cache] Retry attempt=3594 endpoint=/api/v2/notify
+2026-06-01T00:00:35.064Z INFO [worker] Webhook delivered event=order.created latency_ms=1490
+2026-06-01T00:00:37.027Z INFO [auth-service] Request received method=GET path=/api/v2/products latency_ms=6917 status=200
+2026-06-01T00:00:38.639Z DEBUG [cache] Token validated user_id=8670 scope=write
+2026-06-01T00:00:39.492Z DEBUG [api-gateway] DB query table=orders rows=8798 duration_ms=4372
+2026-06-01T00:00:41.483Z INFO [api-gateway] Token validated user_id=7124 scope=read
+2026-06-01T00:00:42.131Z INFO [scheduler] Token validated user_id=8202 scope=read
+2026-06-01T00:00:44.107Z DEBUG [api-gateway] Rate limit check user_id=8318 remaining=9978
+2026-06-01T00:00:44.845Z DEBUG [auth-service] DB query table=users rows=1 duration_ms=9814
+2026-06-01T00:00:45.858Z INFO [api-gateway] Background job job=cleanup completed items_processed=5039
+2026-06-01T00:00:46.685Z INFO [worker] Request received method=POST path=/api/v2/orders latency_ms=1404 status=201
+2026-06-01T00:00:48.595Z INFO [worker] Request received method=GET path=/api/v2/products latency_ms=2104 status=200
+2026-06-01T00:00:50.346Z DEBUG [auth-service] Rate limit check user_id=8646 remaining=9939
+2026-06-01T00:00:51.577Z INFO [worker] Cache hit key=session:5108 ttl_remaining=3421
+2026-06-01T00:00:52.755Z INFO [scheduler] Background job job=cleanup completed items_processed=7178
+2026-06-01T00:00:55.034Z DEBUG [api-gateway] Cache miss key=product:3682 fetching from db
+2026-06-01T00:00:55.475Z INFO [worker] Metrics flushed counters=3771 histograms=9642
+2026-06-01T00:00:56.259Z INFO [scheduler] Request received method=GET path=/api/v2/users latency_ms=3751 status=200
+2026-06-01T00:00:56.708Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=8424 status=201
+2026-06-01T00:00:57.531Z INFO [cache] Cache hit key=session:8835 ttl_remaining=3421
+2026-06-01T00:00:58.122Z DEBUG [worker] Token validated user_id=3982 scope=write
+2026-06-01T00:01:00.149Z DEBUG [auth-service] DB query table=orders rows=1589 duration_ms=7063
+2026-06-01T00:01:01.228Z DEBUG [cache] DB query table=users rows=1 duration_ms=1613
+2026-06-01T00:01:01.661Z WARN [db-pool] slow query table=analytics duration_ms=4074 threshold_ms=200
+2026-06-01T00:01:02.383Z DEBUG [cache] Connection pool size=10 active=6913 idle=3007
+2026-06-01T00:01:03.296Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=9017
+2026-06-01T00:01:03.811Z INFO [worker] Request received method=GET path=/api/v2/users latency_ms=1529 status=200
+2026-06-01T00:01:06.149Z INFO [auth-service] Health check status=ok uptime_s=7957
+2026-06-01T00:01:07.508Z DEBUG [api-gateway] Connection pool size=10 active=6210 idle=36
+2026-06-01T00:01:09.976Z INFO [cache] Token validated user_id=6931 scope=read
+2026-06-01T00:01:11.808Z WARN [worker] retry budget low remaining=2537
+2026-06-01T00:01:12.526Z INFO [api-gateway] Config reload key=feature_flags changed=false
+2026-06-01T00:01:14.445Z INFO [scheduler] Background job job=cleanup completed items_processed=937
+2026-06-01T00:01:14.855Z DEBUG [worker] Connection pool size=10 active=932 idle=8321
+2026-06-01T00:01:15.331Z INFO [api-gateway] Config reload key=feature_flags changed=false
+2026-06-01T00:01:15.781Z INFO [cache] Request received method=POST path=/api/v2/orders latency_ms=9334 status=201
+2026-06-01T00:01:16.622Z DEBUG [api-gateway] DB query table=orders rows=6869 duration_ms=9563
+2026-06-01T00:01:18.166Z INFO [db-pool] Cache hit key=session:5148 ttl_remaining=3421
+2026-06-01T00:01:18.991Z DEBUG [auth-service] Rate limit check user_id=7492 remaining=5181
+2026-06-01T00:01:21.335Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=9225
+2026-06-01T00:01:23.826Z INFO [worker] Cache hit key=session:8289 ttl_remaining=3421
+2026-06-01T00:01:24.710Z INFO [api-gateway] Cache hit key=session:6055 ttl_remaining=3421
+2026-06-01T00:01:25.637Z DEBUG [worker] Rate limit check user_id=8667 remaining=129
+2026-06-01T00:01:27.406Z DEBUG [db-pool] DB query table=orders rows=2201 duration_ms=4334
+2026-06-01T00:01:27.960Z INFO [scheduler] Metrics flushed counters=2547 histograms=4463
+2026-06-01T00:01:28.880Z INFO [scheduler] Background job job=cleanup completed items_processed=3336
+2026-06-01T00:01:30.692Z INFO [worker] Webhook delivered event=order.created latency_ms=4115
+2026-06-01T00:01:32.984Z INFO [api-gateway] Health check status=ok uptime_s=4534
+2026-06-01T00:01:33.381Z INFO [auth-service] Token validated user_id=2648 scope=read
+2026-06-01T00:01:35.312Z DEBUG [scheduler] Background job job=cleanup started
+2026-06-01T00:01:36.846Z INFO [api-gateway] Request received method=GET path=/api/v2/products latency_ms=8939 status=200
+2026-06-01T00:01:37.225Z DEBUG [worker] Connection pool size=10 active=7042 idle=2089
+2026-06-01T00:01:37.617Z DEBUG [api-gateway] Retry attempt=3442 endpoint=/api/v2/notify
+2026-06-01T00:01:39.418Z INFO [api-gateway] Background job job=cleanup completed items_processed=9174
+2026-06-01T00:01:41.663Z DEBUG [worker] Connection pool size=10 active=3879 idle=2663
+2026-06-01T00:01:44.110Z INFO [cache] Request received method=GET path=/api/v2/users latency_ms=2939 status=200
+2026-06-01T00:01:46.031Z INFO [cache] Cache hit key=session:4372 ttl_remaining=3421
+2026-06-01T00:01:46.681Z INFO [api-gateway] Health check status=ok uptime_s=635
+2026-06-01T00:01:48.870Z INFO [auth-service] Webhook delivered event=order.created latency_ms=5729
+2026-06-01T00:01:49.841Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=3165 status=200
+2026-06-01T00:01:51.018Z INFO [api-gateway] Token validated user_id=5754 scope=read
+2026-06-01T00:01:52.729Z DEBUG [scheduler] Retry attempt=453 endpoint=/api/v2/notify
+2026-06-01T00:01:53.283Z INFO [auth-service] Config reload key=feature_flags changed=false
+2026-06-01T00:01:55.700Z INFO [api-gateway] Request received method=POST path=/api/v2/orders latency_ms=9775 status=201
+2026-06-01T00:01:56.957Z WARN [db-pool] retry budget low remaining=9933
+2026-06-01T00:01:59.422Z INFO [cache] Config reload key=feature_flags changed=false
+2026-06-01T00:02:00.140Z INFO [scheduler] Health check status=ok uptime_s=28
+2026-06-01T00:02:01.584Z DEBUG [scheduler] Cache miss key=product:5968 fetching from db
+2026-06-01T00:02:02.833Z INFO [db-pool] Config reload key=feature_flags changed=false
+2026-06-01T00:02:03.823Z INFO [scheduler] Token validated user_id=8309 scope=read
+2026-06-01T00:02:04.804Z DEBUG [db-pool] Background job job=cleanup started
+2026-06-01T00:02:06.638Z DEBUG [auth-service] Cache miss key=product:6889 fetching from db
+2026-06-01T00:02:08.400Z DEBUG [scheduler] Connection pool size=10 active=9325 idle=4931
+2026-06-01T00:02:09.594Z INFO [db-pool] Token validated user_id=3444 scope=read
+2026-06-01T00:02:10.840Z DEBUG [worker] Retry attempt=7619 endpoint=/api/v2/notify
+2026-06-01T00:02:12.111Z INFO [auth-service] Metrics flushed counters=7753 histograms=2781
+2026-06-01T00:02:13.861Z INFO [worker] Config reload key=feature_flags changed=false
+2026-06-01T00:02:14.898Z WARN [auth-service] cache eviction rate high evictions_per_min=3681
+2026-06-01T00:02:16.973Z INFO [api-gateway] Request received method=GET path=/api/v2/users latency_ms=4012 status=200
+2026-06-01T00:02:19.437Z DEBUG [api-gateway] Token validated user_id=6791 scope=write
+2026-06-01T00:02:21.687Z DEBUG [auth-service] Background job job=cleanup started
+2026-06-01T00:02:23.075Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=1747 status=200
+2026-06-01T00:02:25.087Z INFO [auth-service] Metrics flushed counters=7612 histograms=823
+2026-06-01T00:02:26.613Z INFO [cache] Request received method=GET path=/api/v2/products latency_ms=7613 status=200
+2026-06-01T00:02:28.382Z DEBUG [worker] Retry attempt=7252 endpoint=/api/v2/notify
+2026-06-01T00:02:30.030Z WARN [worker] retry budget low remaining=8977
+2026-06-01T00:02:31.311Z INFO [scheduler] Webhook delivered event=order.created latency_ms=7374
+2026-06-01T00:02:32.181Z INFO [scheduler] Token validated user_id=8541 scope=read
+2026-06-01T00:02:33.547Z INFO [db-pool] Webhook delivered event=order.created latency_ms=1270
+2026-06-01T00:02:35.417Z INFO [db-pool] Background job job=cleanup completed items_processed=5239
+2026-06-01T00:02:37.682Z INFO [auth-service] Request received method=GET path=/api/v2/products latency_ms=3789 status=200
+2026-06-01T00:02:38.824Z INFO [scheduler] Cache hit key=session:1053 ttl_remaining=3421
+2026-06-01T00:02:40.037Z INFO [worker] Webhook delivered event=order.created latency_ms=6813
+2026-06-01T00:02:40.474Z DEBUG [cache] DB query table=users rows=1 duration_ms=9433
+2026-06-01T00:02:41.611Z INFO [db-pool] Token validated user_id=6390 scope=read
+2026-06-01T00:02:43.789Z DEBUG [worker] Cache miss key=product:8000 fetching from db
+2026-06-01T00:02:44.571Z DEBUG [cache] DB query table=users rows=1 duration_ms=6372
+2026-06-01T00:02:45.611Z INFO [cache] Request received method=GET path=/api/v2/products latency_ms=7658 status=200
+2026-06-01T00:02:47.934Z DEBUG [worker] DB query table=users rows=1 duration_ms=6456
+2026-06-01T00:02:49.536Z INFO [api-gateway] Request received method=POST path=/api/v2/orders latency_ms=7023 status=201
+2026-06-01T00:02:50.134Z DEBUG [auth-service] DB query table=users rows=1 duration_ms=4263
+2026-06-01T00:02:51.268Z INFO [cache] Background job job=cleanup completed items_processed=5530
+2026-06-01T00:02:53.243Z DEBUG [db-pool] Background job job=cleanup started
+2026-06-01T00:02:54.098Z INFO [cache] Request received method=GET path=/api/v2/users latency_ms=8838 status=200
+2026-06-01T00:02:54.513Z INFO [auth-service] Request received method=POST path=/api/v2/orders latency_ms=660 status=201
+2026-06-01T00:02:56.472Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=2497 status=200
+2026-06-01T00:02:57.297Z DEBUG [scheduler] DB query table=orders rows=9241 duration_ms=3572
+2026-06-01T00:02:58.620Z INFO [db-pool] Request received method=GET path=/api/v2/products latency_ms=9927 status=200
+2026-06-01T00:03:00.256Z WARN [scheduler] slow query table=analytics duration_ms=2684 threshold_ms=200
+2026-06-01T00:03:02.678Z INFO [worker] Request received method=GET path=/api/v2/users latency_ms=5112 status=200
+2026-06-01T00:03:04.245Z DEBUG [cache] Cache miss key=product:1246 fetching from db
+2026-06-01T00:03:05.848Z INFO [auth-service] Request received method=POST path=/api/v2/orders latency_ms=4942 status=201
+2026-06-01T00:03:08.018Z DEBUG [api-gateway] DB query table=users rows=1 duration_ms=5689
+2026-06-01T00:03:09.490Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=8290 status=201
+2026-06-01T00:03:11.215Z INFO [cache] Webhook delivered event=order.created latency_ms=1730
+2026-06-01T00:03:12.469Z DEBUG [scheduler] Token validated user_id=2507 scope=write
+2026-06-01T00:03:13.727Z WARN [worker] cache eviction rate high evictions_per_min=8818
+2026-06-01T00:03:15.731Z DEBUG [cache] Rate limit check user_id=5281 remaining=4023
+2026-06-01T00:03:17.859Z INFO [db-pool] Webhook delivered event=order.created latency_ms=3996
+2026-06-01T00:03:19.810Z DEBUG [worker] Background job job=cleanup started
+2026-06-01T00:03:20.850Z DEBUG [db-pool] Connection pool size=10 active=7989 idle=3476
+2026-06-01T00:03:21.930Z INFO [db-pool] Token validated user_id=9768 scope=read
+2026-06-01T00:03:23.773Z INFO [worker] Request received method=GET path=/api/v2/users latency_ms=8465 status=200
+2026-06-01T00:03:26.159Z INFO [auth-service] Health check status=ok uptime_s=8005
+2026-06-01T00:03:27.680Z INFO [scheduler] Webhook delivered event=order.created latency_ms=8042
+2026-06-01T00:03:28.966Z INFO [api-gateway] Token validated user_id=3631 scope=read
+2026-06-01T00:03:30.156Z INFO [db-pool] Config reload key=feature_flags changed=false
+2026-06-01T00:03:31.268Z DEBUG [worker] Retry attempt=6972 endpoint=/api/v2/notify
+2026-06-01T00:03:33.760Z DEBUG [db-pool] Retry attempt=7435 endpoint=/api/v2/notify
+2026-06-01T00:03:34.656Z INFO [auth-service] Request received method=POST path=/api/v2/orders latency_ms=3156 status=201
+2026-06-01T00:03:35.650Z WARN [worker] connection pool nearly full active=3139 of 10
+2026-06-01T00:03:36.426Z DEBUG [db-pool] Rate limit check user_id=1648 remaining=3181
+2026-06-01T00:03:37.378Z DEBUG [auth-service] Rate limit check user_id=232 remaining=8752
+2026-06-01T00:03:37.957Z INFO [api-gateway] Metrics flushed counters=4787 histograms=2069
+2026-06-01T00:03:39.660Z WARN [cache] slow query table=analytics duration_ms=201 threshold_ms=200
+2026-06-01T00:03:41.223Z DEBUG [cache] Token validated user_id=5583 scope=write
+2026-06-01T00:03:41.928Z INFO [db-pool] Webhook delivered event=order.created latency_ms=1870
+2026-06-01T00:03:44.037Z DEBUG [cache] DB query table=orders rows=9454 duration_ms=879
+2026-06-01T00:03:44.671Z DEBUG [db-pool] DB query table=orders rows=4067 duration_ms=1941
+2026-06-01T00:03:46.199Z DEBUG [worker] Cache miss key=product:8562 fetching from db
+2026-06-01T00:03:47.336Z DEBUG [db-pool] Background job job=cleanup started
+2026-06-01T00:03:48.307Z DEBUG [api-gateway] DB query table=orders rows=3405 duration_ms=3458
+2026-06-01T00:03:49.190Z INFO [auth-service] Cache hit key=session:2848 ttl_remaining=3421
+2026-06-01T00:03:50.704Z INFO [api-gateway] Health check status=ok uptime_s=7382
+2026-06-01T00:03:52.521Z DEBUG [db-pool] DB query table=users rows=1 duration_ms=3793
+2026-06-01T00:03:53.454Z INFO [scheduler] Webhook delivered event=order.created latency_ms=1167
+2026-06-01T00:03:55.267Z INFO [scheduler] Config reload key=feature_flags changed=false
+2026-06-01T00:03:57.021Z INFO [cache] Request received method=POST path=/api/v2/orders latency_ms=8923 status=201
+2026-06-01T00:03:57.816Z INFO [db-pool] Request received method=GET path=/api/v2/products latency_ms=1170 status=200
+2026-06-01T00:03:58.247Z INFO [worker] Config reload key=feature_flags changed=false
+2026-06-01T00:04:00.574Z DEBUG [api-gateway] Token validated user_id=4983 scope=write
+2026-06-01T00:04:02.413Z INFO [worker] Metrics flushed counters=8091 histograms=7173
+2026-06-01T00:04:02.890Z INFO [cache] Background job job=cleanup completed items_processed=9892
+2026-06-01T00:04:03.741Z INFO [auth-service] Config reload key=feature_flags changed=false
+2026-06-01T00:04:05.333Z INFO [scheduler] Token validated user_id=9442 scope=read
+2026-06-01T00:04:05.721Z WARN [auth-service] retry budget low remaining=8503
+2026-06-01T00:04:07.454Z INFO [auth-service] Config reload key=feature_flags changed=false
+2026-06-01T00:04:08.713Z DEBUG [api-gateway] Token validated user_id=5701 scope=write
+2026-06-01T00:04:09.912Z INFO [scheduler] Request received method=POST path=/api/v2/orders latency_ms=2635 status=201
+2026-06-01T00:04:10.937Z INFO [cache] Token validated user_id=6562 scope=read
+2026-06-01T00:04:13.027Z DEBUG [api-gateway] Token validated user_id=1443 scope=write
+2026-06-01T00:04:14.019Z INFO [api-gateway] Health check status=ok uptime_s=8432
+2026-06-01T00:04:16.134Z INFO [scheduler] Metrics flushed counters=7570 histograms=6771
+2026-06-01T00:04:16.553Z DEBUG [db-pool] Token validated user_id=7243 scope=write
+2026-06-01T00:04:18.525Z INFO [db-pool] Metrics flushed counters=2147 histograms=4720
+2026-06-01T00:04:19.789Z INFO [cache] Request received method=POST path=/api/v2/orders latency_ms=473 status=201
+2026-06-01T00:04:22.230Z DEBUG [auth-service] Connection pool size=10 active=5092 idle=9025
+2026-06-01T00:04:22.560Z DEBUG [api-gateway] Cache miss key=product:1859 fetching from db
+2026-06-01T00:04:23.875Z INFO [scheduler] Request received method=GET path=/api/v2/products latency_ms=8166 status=200
+2026-06-01T00:04:26.227Z INFO [worker] Token validated user_id=6808 scope=read
+2026-06-01T00:04:28.363Z DEBUG [auth-service] Token validated user_id=9032 scope=write
+2026-06-01T00:04:28.982Z INFO [worker] Metrics flushed counters=2237 histograms=1144
+2026-06-01T00:04:29.889Z DEBUG [db-pool] Rate limit check user_id=43 remaining=4635
+2026-06-01T00:04:31.787Z DEBUG [worker] Token validated user_id=2435 scope=write
+2026-06-01T00:04:33.069Z DEBUG [db-pool] Retry attempt=9043 endpoint=/api/v2/notify
+2026-06-01T00:04:35.047Z DEBUG [cache] Retry attempt=3091 endpoint=/api/v2/notify
+2026-06-01T00:04:37.505Z INFO [worker] Health check status=ok uptime_s=3827
+2026-06-01T00:04:39.688Z DEBUG [api-gateway] Retry attempt=7750 endpoint=/api/v2/notify
+2026-06-01T00:04:41.540Z DEBUG [cache] Connection pool size=10 active=8116 idle=607
+2026-06-01T00:04:42.118Z DEBUG [db-pool] DB query table=orders rows=7214 duration_ms=1634
+2026-06-01T00:04:43.575Z DEBUG [api-gateway] Connection pool size=10 active=6718 idle=2530
+2026-06-01T00:04:44.039Z INFO [db-pool] Config reload key=feature_flags changed=false
+2026-06-01T00:04:45.863Z INFO [api-gateway] Background job job=cleanup completed items_processed=8743
+2026-06-01T00:04:46.999Z INFO [scheduler] Webhook delivered event=order.created latency_ms=8865
+2026-06-01T00:04:47.378Z INFO [auth-service] Token validated user_id=3728 scope=read
+2026-06-01T00:04:49.321Z DEBUG [api-gateway] DB query table=orders rows=7270 duration_ms=2726
+2026-06-01T00:04:51.148Z INFO [api-gateway] Background job job=cleanup completed items_processed=920
+2026-06-01T00:04:52.093Z DEBUG [cache] Connection pool size=10 active=4001 idle=8703
+2026-06-01T00:04:53.300Z INFO [auth-service] Request received method=GET path=/api/v2/products latency_ms=2869 status=200
+2026-06-01T00:04:53.774Z DEBUG [worker] Cache miss key=product:8154 fetching from db
+2026-06-01T00:04:56.082Z INFO [auth-service] Webhook delivered event=order.created latency_ms=4162
+2026-06-01T00:04:57.393Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=4713
+2026-06-01T00:04:59.184Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=5662
+2026-06-01T00:05:01.656Z INFO [scheduler] Health check status=ok uptime_s=4098
+2026-06-01T00:05:02.961Z INFO [auth-service] Health check status=ok uptime_s=7917
+2026-06-01T00:05:03.496Z DEBUG [worker] Retry attempt=9418 endpoint=/api/v2/notify
+2026-06-01T00:05:04.447Z INFO [db-pool] Request received method=GET path=/api/v2/users latency_ms=6485 status=200
+2026-06-01T00:05:05.351Z DEBUG [scheduler] DB query table=users rows=1 duration_ms=9936
+2026-06-01T00:05:07.290Z INFO [auth-service] Config reload key=feature_flags changed=false
+2026-06-01T00:05:09.354Z INFO [scheduler] Cache hit key=session:4107 ttl_remaining=3421
+2026-06-01T00:05:11.146Z WARN [scheduler] connection pool nearly full active=1592 of 10
+2026-06-01T00:05:13.433Z INFO [api-gateway] Token validated user_id=7223 scope=read
+2026-06-01T00:05:13.806Z DEBUG [scheduler] Connection pool size=10 active=1477 idle=4836
+2026-06-01T00:05:14.825Z DEBUG [auth-service] Cache miss key=product:2166 fetching from db
+2026-06-01T00:05:16.856Z DEBUG [worker] Rate limit check user_id=2696 remaining=4211
+2026-06-01T00:05:19.166Z DEBUG [db-pool] Retry attempt=1887 endpoint=/api/v2/notify
+2026-06-01T00:05:20.497Z INFO [auth-service] Cache hit key=session:6512 ttl_remaining=3421
+2026-06-01T00:05:22.925Z DEBUG [db-pool] DB query table=orders rows=6465 duration_ms=229
+2026-06-01T00:05:23.807Z INFO [cache] Background job job=cleanup completed items_processed=4296
+2026-06-01T00:05:25.393Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=3831 status=201
+2026-06-01T00:05:26.730Z DEBUG [worker] Retry attempt=9996 endpoint=/api/v2/notify
+2026-06-01T00:05:27.517Z INFO [scheduler] Webhook delivered event=order.created latency_ms=4952
+2026-06-01T00:05:29.245Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=610 status=200
+2026-06-01T00:05:30.215Z DEBUG [api-gateway] DB query table=orders rows=3847 duration_ms=8808
+2026-06-01T00:05:30.813Z DEBUG [db-pool] Background job job=cleanup started
+2026-06-01T00:05:32.405Z WARN [auth-service] retry budget low remaining=1623
+2026-06-01T00:05:34.540Z DEBUG [cache] Rate limit check user_id=537 remaining=6071
+2026-06-01T00:05:35.318Z DEBUG [auth-service] Retry attempt=1628 endpoint=/api/v2/notify
+2026-06-01T00:05:37.776Z DEBUG [worker] Retry attempt=993 endpoint=/api/v2/notify
+2026-06-01T00:05:38.952Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=1502
+2026-06-01T00:05:40.710Z INFO [scheduler] Config reload key=feature_flags changed=false
+2026-06-01T00:05:43.146Z INFO [db-pool] Cache hit key=session:2064 ttl_remaining=3421
+2026-06-01T00:05:45.177Z INFO [api-gateway] Metrics flushed counters=3395 histograms=9608
+2026-06-01T00:05:45.952Z INFO [db-pool] Request received method=GET path=/api/v2/products latency_ms=9765 status=200
+2026-06-01T00:05:46.259Z INFO [auth-service] Metrics flushed counters=4107 histograms=2859
+2026-06-01T00:05:46.801Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=5870 status=200
+2026-06-01T00:05:48.838Z INFO [worker] Background job job=cleanup completed items_processed=259
+2026-06-01T00:05:49.522Z INFO [auth-service] Health check status=ok uptime_s=8620
+2026-06-01T00:05:50.072Z INFO [cache] Webhook delivered event=order.created latency_ms=5932
+2026-06-01T00:05:51.501Z INFO [cache] Metrics flushed counters=3630 histograms=711
+2026-06-01T00:05:53.401Z INFO [worker] Token validated user_id=7505 scope=read
+2026-06-01T00:05:55.116Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=6581
+2026-06-01T00:05:56.354Z INFO [cache] Webhook delivered event=order.created latency_ms=1205
+2026-06-01T00:05:58.632Z INFO [worker] Request received method=GET path=/api/v2/products latency_ms=1077 status=200
+2026-06-01T00:05:59.210Z DEBUG [scheduler] Retry attempt=6241 endpoint=/api/v2/notify
+2026-06-01T00:06:01.698Z DEBUG [db-pool] Token validated user_id=8283 scope=write
+2026-06-01T00:06:03.330Z INFO [scheduler] Request received method=POST path=/api/v2/orders latency_ms=9034 status=201
+2026-06-01T00:06:05.216Z INFO [cache] Webhook delivered event=order.created latency_ms=3744
+2026-06-01T00:06:06.426Z DEBUG [cache] Background job job=cleanup started
+2026-06-01T00:06:08.332Z INFO [cache] Background job job=cleanup completed items_processed=4177
+2026-06-01T00:06:09.455Z INFO [scheduler] Webhook delivered event=order.created latency_ms=1100
+2026-06-01T00:06:09.956Z INFO [api-gateway] Health check status=ok uptime_s=1583
+2026-06-01T00:06:11.894Z DEBUG [auth-service] DB query table=users rows=1 duration_ms=9609
+2026-06-01T00:06:14.298Z DEBUG [db-pool] DB query table=orders rows=6731 duration_ms=5794
+2026-06-01T00:06:16.520Z WARN [cache] slow query table=analytics duration_ms=4713 threshold_ms=200
+2026-06-01T00:06:18.141Z DEBUG [api-gateway] Cache miss key=product:2536 fetching from db
+2026-06-01T00:06:19.886Z INFO [api-gateway] Background job job=cleanup completed items_processed=9114
+2026-06-01T00:06:20.995Z ERROR [db-pool] webhook delivery failed event=payment.failed status=500 attempt=3706
+2026-06-01T00:06:23.071Z DEBUG [worker] DB query table=users rows=1 duration_ms=9978
+2026-06-01T00:06:25.415Z INFO [db-pool] Request received method=GET path=/api/v2/users latency_ms=2956 status=200
+2026-06-01T00:06:26.316Z ERROR [db-pool] queue depth exceeded threshold=1000 current=5752
+2026-06-01T00:06:26.629Z INFO [worker] Health check status=ok uptime_s=1141
+2026-06-01T00:06:27.241Z INFO [api-gateway] Request received method=POST path=/api/v2/orders latency_ms=8692 status=201
+2026-06-01T00:06:28.015Z DEBUG [cache] Retry attempt=2579 endpoint=/api/v2/notify
+2026-06-01T00:06:29.129Z WARN [db-pool] slow query table=analytics duration_ms=862 threshold_ms=200
+2026-06-01T00:06:29.771Z WARN [worker] slow query table=analytics duration_ms=1337 threshold_ms=200
+2026-06-01T00:06:30.670Z INFO [cache] Webhook delivered event=order.created latency_ms=9947
+2026-06-01T00:06:31.942Z INFO [auth-service] Metrics flushed counters=1865 histograms=5656
+2026-06-01T00:06:33.188Z INFO [scheduler] Config reload key=feature_flags changed=false
+2026-06-01T00:06:34.559Z INFO [db-pool] Request received method=GET path=/api/v2/users latency_ms=3613 status=200
+2026-06-01T00:06:35.728Z DEBUG [api-gateway] DB query table=users rows=1 duration_ms=3350
+2026-06-01T00:06:36.691Z INFO [auth-service] Token validated user_id=4743 scope=read
+2026-06-01T00:06:37.713Z INFO [cache] Health check status=ok uptime_s=2879
+2026-06-01T00:06:38.297Z DEBUG [scheduler] Cache miss key=product:8197 fetching from db
+2026-06-01T00:06:39.827Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=6506 status=201
+2026-06-01T00:06:42.022Z INFO [cache] Request received method=GET path=/api/v2/users latency_ms=7533 status=200
+2026-06-01T00:06:44.349Z INFO [worker] Health check status=ok uptime_s=9395
+2026-06-01T00:06:45.539Z INFO [cache] Token validated user_id=1888 scope=read
+2026-06-01T00:06:46.730Z INFO [auth-service] Config reload key=feature_flags changed=false
+2026-06-01T00:06:48.042Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=7156 status=201
+2026-06-01T00:06:50.200Z INFO [cache] Config reload key=feature_flags changed=false
+2026-06-01T00:06:51.381Z INFO [cache] Token validated user_id=5563 scope=read
+2026-06-01T00:06:52.168Z ERROR [auth-service] connection timeout host=db-replica-2 attempt=8364 retrying
+2026-06-01T00:06:53.861Z DEBUG [worker] Cache miss key=product:5725 fetching from db
+2026-06-01T00:06:54.934Z INFO [auth-service] Cache hit key=session:1685 ttl_remaining=3421
+2026-06-01T00:06:55.556Z INFO [auth-service] Config reload key=feature_flags changed=false
+2026-06-01T00:06:56.192Z ERROR [scheduler] connection timeout host=db-replica-2 attempt=2903 retrying
+2026-06-01T00:06:58.585Z INFO [cache] Webhook delivered event=order.created latency_ms=9237
+2026-06-01T00:07:00.557Z DEBUG [scheduler] Retry attempt=5180 endpoint=/api/v2/notify
+2026-06-01T00:07:01.189Z INFO [cache] Webhook delivered event=order.created latency_ms=4962
+2026-06-01T00:07:03.241Z DEBUG [api-gateway] Retry attempt=8313 endpoint=/api/v2/notify
+2026-06-01T00:07:03.704Z DEBUG [cache] DB query table=users rows=1 duration_ms=933
+2026-06-01T00:07:04.815Z INFO [api-gateway] Request received method=POST path=/api/v2/orders latency_ms=9734 status=201
+2026-06-01T00:07:06.231Z DEBUG [worker] DB query table=users rows=1 duration_ms=7369
+2026-06-01T00:07:08.531Z DEBUG [scheduler] Cache miss key=product:5268 fetching from db
+2026-06-01T00:07:10.162Z DEBUG [auth-service] DB query table=users rows=1 duration_ms=7382
+2026-06-01T00:07:10.690Z INFO [scheduler] Request received method=POST path=/api/v2/orders latency_ms=8267 status=201
+2026-06-01T00:07:12.411Z INFO [auth-service] Webhook delivered event=order.created latency_ms=7200
+2026-06-01T00:07:13.864Z DEBUG [auth-service] Retry attempt=6109 endpoint=/api/v2/notify
+2026-06-01T00:07:16.183Z DEBUG [cache] Retry attempt=9796 endpoint=/api/v2/notify
+2026-06-01T00:07:16.599Z INFO [scheduler] Background job job=cleanup completed items_processed=1080
+2026-06-01T00:07:17.624Z DEBUG [scheduler] Background job job=cleanup started
+2026-06-01T00:07:18.549Z WARN [scheduler] connection pool nearly full active=5462 of 10
+2026-06-01T00:07:19.028Z INFO [auth-service] Background job job=cleanup completed items_processed=5083
+2026-06-01T00:07:21.457Z INFO [scheduler] Health check status=ok uptime_s=2113
+2026-06-01T00:07:23.066Z INFO [db-pool] Metrics flushed counters=6172 histograms=5382
+2026-06-01T00:07:25.155Z INFO [scheduler] Metrics flushed counters=1532 histograms=6938
+2026-06-01T00:07:26.574Z INFO [db-pool] Token validated user_id=2954 scope=read
+2026-06-01T00:07:28.967Z INFO [cache] Cache hit key=session:3712 ttl_remaining=3421
+2026-06-01T00:07:31.467Z INFO [api-gateway] Token validated user_id=1658 scope=read
+2026-06-01T00:07:32.883Z DEBUG [scheduler] DB query table=users rows=1 duration_ms=5518
+2026-06-01T00:07:35.112Z DEBUG [auth-service] Background job job=cleanup started
+2026-06-01T00:07:35.751Z INFO [scheduler] Config reload key=feature_flags changed=false
+2026-06-01T00:07:37.831Z INFO [scheduler] Webhook delivered event=order.created latency_ms=716
+2026-06-01T00:07:39.035Z INFO [scheduler] Cache hit key=session:7278 ttl_remaining=3421
+2026-06-01T00:07:40.678Z WARN [scheduler] retry budget low remaining=3834
+2026-06-01T00:07:42.153Z INFO [cache] Cache hit key=session:6027 ttl_remaining=3421
+2026-06-01T00:07:43.945Z DEBUG [cache] Token validated user_id=4617 scope=write
+2026-06-01T00:07:45.957Z DEBUG [worker] Background job job=cleanup started
+2026-06-01T00:07:48.383Z INFO [worker] Request received method=GET path=/api/v2/products latency_ms=4097 status=200
+2026-06-01T00:07:48.798Z DEBUG [db-pool] DB query table=orders rows=8453 duration_ms=2043
+2026-06-01T00:07:49.725Z ERROR [auth-service] queue depth exceeded threshold=1000 current=7362
+2026-06-01T00:07:52.016Z INFO [cache] Request received method=POST path=/api/v2/orders latency_ms=3638 status=201
+2026-06-01T00:07:54.113Z INFO [api-gateway] Health check status=ok uptime_s=873
+2026-06-01T00:07:55.285Z DEBUG [auth-service] Background job job=cleanup started
+2026-06-01T00:07:57.773Z DEBUG [auth-service] DB query table=users rows=1 duration_ms=5222
+2026-06-01T00:08:00.121Z WARN [scheduler] cache eviction rate high evictions_per_min=2393
+2026-06-01T00:08:00.724Z INFO [cache] Request received method=GET path=/api/v2/products latency_ms=7686 status=200
+2026-06-01T00:08:02.011Z INFO [api-gateway] Request received method=GET path=/api/v2/users latency_ms=4194 status=200
+2026-06-01T00:08:02.785Z INFO [worker] Config reload key=feature_flags changed=false
+2026-06-01T00:08:04.246Z INFO [db-pool] Cache hit key=session:4935 ttl_remaining=3421
+2026-06-01T00:08:04.814Z INFO [cache] Config reload key=feature_flags changed=false
+2026-06-01T00:08:06.120Z INFO [cache] Config reload key=feature_flags changed=false
+2026-06-01T00:08:07.599Z INFO [worker] Config reload key=feature_flags changed=false
+2026-06-01T00:08:08.432Z INFO [db-pool] Health check status=ok uptime_s=26
+2026-06-01T00:08:10.084Z INFO [worker] Health check status=ok uptime_s=3069
+2026-06-01T00:08:11.846Z INFO [worker] Background job job=cleanup completed items_processed=1109
+2026-06-01T00:08:14.243Z DEBUG [worker] DB query table=users rows=1 duration_ms=6398
+2026-06-01T00:08:16.465Z INFO [scheduler] Health check status=ok uptime_s=6117
+2026-06-01T00:08:17.323Z INFO [db-pool] Request received method=POST path=/api/v2/orders latency_ms=5650 status=201
+2026-06-01T00:08:18.153Z INFO [scheduler] Request received method=POST path=/api/v2/orders latency_ms=9534 status=201
+2026-06-01T00:08:20.071Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=5773 status=200
+2026-06-01T00:08:21.572Z INFO [auth-service] Webhook delivered event=order.created latency_ms=7841
+2026-06-01T00:08:23.262Z INFO [api-gateway] Webhook delivered event=order.created latency_ms=606
+2026-06-01T00:08:24.207Z INFO [auth-service] Request received method=GET path=/api/v2/users latency_ms=5171 status=200
+2026-06-01T00:08:26.561Z DEBUG [cache] Token validated user_id=4151 scope=write
+2026-06-01T00:08:26.941Z INFO [auth-service] Token validated user_id=5849 scope=read
+2026-06-01T00:08:29.138Z INFO [scheduler] Background job job=cleanup completed items_processed=4477
+2026-06-01T00:08:29.712Z DEBUG [cache] Background job job=cleanup started
+2026-06-01T00:08:31.647Z DEBUG [db-pool] Connection pool size=10 active=8130 idle=8152
+2026-06-01T00:08:32.755Z DEBUG [db-pool] DB query table=orders rows=6956 duration_ms=1294
+2026-06-01T00:08:34.002Z INFO [worker] Token validated user_id=5263 scope=read
+2026-06-01T00:08:34.528Z INFO [scheduler] Token validated user_id=5022 scope=read
+2026-06-01T00:08:35.809Z WARN [cache] connection pool nearly full active=7273 of 10
+2026-06-01T00:08:36.883Z INFO [scheduler] Background job job=cleanup completed items_processed=7127
+2026-06-01T00:08:37.787Z INFO [api-gateway] Health check status=ok uptime_s=5953
+2026-06-01T00:08:39.215Z WARN [scheduler] connection pool nearly full active=511 of 10
+2026-06-01T00:08:39.829Z DEBUG [scheduler] Token validated user_id=571 scope=write
+2026-06-01T00:08:40.407Z INFO [scheduler] Background job job=cleanup completed items_processed=5934
+2026-06-01T00:08:41.549Z DEBUG [api-gateway] Connection pool size=10 active=7372 idle=6078
+2026-06-01T00:08:42.668Z ERROR [api-gateway] webhook delivery failed event=payment.failed status=500 attempt=2256
+2026-06-01T00:08:44.133Z DEBUG [db-pool] Rate limit check user_id=4090 remaining=1859
+2026-06-01T00:08:44.490Z INFO [cache] Metrics flushed counters=6341 histograms=9203
+2026-06-01T00:08:45.049Z ERROR [db-pool] webhook delivery failed event=payment.failed status=500 attempt=7312
+2026-06-01T00:08:45.821Z DEBUG [db-pool] Token validated user_id=3280 scope=write
+2026-06-01T00:08:46.391Z INFO [cache] Request received method=GET path=/api/v2/products latency_ms=7293 status=200
+2026-06-01T00:08:48.885Z INFO [db-pool] Background job job=cleanup completed items_processed=1064
+2026-06-01T00:08:50.395Z INFO [db-pool] Request received method=GET path=/api/v2/products latency_ms=2853 status=200
+2026-06-01T00:08:52.441Z DEBUG [auth-service] DB query table=orders rows=3293 duration_ms=2276
+2026-06-01T00:08:53.262Z DEBUG [api-gateway] Retry attempt=9078 endpoint=/api/v2/notify
+2026-06-01T00:08:54.821Z DEBUG [worker] Connection pool size=10 active=1413 idle=1078
+2026-06-01T00:08:55.801Z WARN [scheduler] retry budget low remaining=8613
+2026-06-01T00:08:57.005Z DEBUG [worker] DB query table=orders rows=2054 duration_ms=5195
+2026-06-01T00:08:58.718Z DEBUG [cache] Retry attempt=2103 endpoint=/api/v2/notify
+2026-06-01T00:09:00.949Z ERROR [worker] webhook delivery failed event=payment.failed status=500 attempt=9631
+2026-06-01T00:09:01.650Z INFO [cache] Metrics flushed counters=908 histograms=2035
+2026-06-01T00:09:03.090Z INFO [auth-service] Request received method=GET path=/api/v2/products latency_ms=5287 status=200
+2026-06-01T00:09:05.446Z INFO [db-pool] Metrics flushed counters=4654 histograms=1293
+2026-06-01T00:09:06.297Z INFO [worker] Token validated user_id=2051 scope=read
+2026-06-01T00:09:07.972Z DEBUG [worker] DB query table=orders rows=8235 duration_ms=2763
+2026-06-01T00:09:09.574Z DEBUG [auth-service] Connection pool size=10 active=9915 idle=5532
+2026-06-01T00:09:11.728Z DEBUG [api-gateway] DB query table=users rows=1 duration_ms=1331
+2026-06-01T00:09:12.128Z INFO [worker] Token validated user_id=3454 scope=read
+2026-06-01T00:09:14.115Z DEBUG [worker] DB query table=users rows=1 duration_ms=8160
+2026-06-01T00:09:16.371Z DEBUG [db-pool] Rate limit check user_id=7913 remaining=4013
+2026-06-01T00:09:18.441Z INFO [cache] Token validated user_id=7431 scope=read
+2026-06-01T00:09:18.902Z INFO [auth-service] Webhook delivered event=order.created latency_ms=6810
+2026-06-01T00:09:20.267Z INFO [db-pool] Config reload key=feature_flags changed=false
+2026-06-01T00:09:20.883Z WARN [db-pool] cache eviction rate high evictions_per_min=6533

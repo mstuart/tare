@@ -1,0 +1,79 @@
+[
+  {
+    "name": "cargo_packages",
+    "content_type": "json_array",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare compact-lossy",
+    "input_tokens": 6906,
+    "output_tokens": 3625,
+    "ratio": 0.5249,
+    "reduction_pct": 47.5,
+    "ms": 8.5
+  },
+  {
+    "name": "ps_aux",
+    "content_type": "tabular",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare compact-lossy",
+    "input_tokens": 1545,
+    "output_tokens": 802,
+    "ratio": 0.5191,
+    "reduction_pct": 48.1,
+    "ms": 3.0
+  },
+  {
+    "name": "app_log",
+    "content_type": "logs",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare compact-lossy",
+    "input_tokens": 13217,
+    "output_tokens": 6551,
+    "ratio": 0.4956,
+    "reduction_pct": 50.4,
+    "ms": 3.4
+  },
+  {
+    "name": "agent_context",
+    "content_type": "agent_context",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare compress --task diagnose error rate spike in logs",
+    "input_tokens": 15130,
+    "output_tokens": 8499,
+    "ratio": 0.5617,
+    "reduction_pct": 43.8,
+    "ms": 10.8
+  },
+  {
+    "name": "server_rs",
+    "content_type": "code",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare skeletonize --path server.rs",
+    "input_tokens": 5930,
+    "output_tokens": 1582,
+    "ratio": 0.2668,
+    "reduction_pct": 73.3,
+    "ms": 5.2
+  },
+  {
+    "name": "json_crush_rs",
+    "content_type": "code",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare skeletonize --path json_crush.rs",
+    "input_tokens": 3937,
+    "output_tokens": 1607,
+    "ratio": 0.4082,
+    "reduction_pct": 59.2,
+    "ms": 4.5
+  },
+  {
+    "name": "readme_prose",
+    "content_type": "prose",
+    "tokenizer": "tiktoken o200k_base",
+    "tare_cmd": "tare compact-lossy",
+    "input_tokens": 5732,
+    "output_tokens": 2727,
+    "ratio": 0.4758,
+    "reduction_pct": 52.4,
+    "ms": 3.4
+  }
+]
