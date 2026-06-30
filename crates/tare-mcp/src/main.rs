@@ -10,15 +10,18 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, Write};
+use tare_memory::Memory;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
-/// Session state: originals retrievable via `tare_expand`, plus cumulative approximate savings.
+/// Session state: originals retrievable via `tare_expand`, plus cumulative approximate savings,
+/// plus the persistent memory store (None if it failed to open at startup).
 #[derive(Default)]
 struct State {
     originals: HashMap<String, String>,
     saved_in: u64,
     saved_out: u64,
+    memory: Option<Memory>,
 }
 
 /// Short content-addressed id for the original-store (within-session only; collisions just overwrite).
@@ -86,6 +89,46 @@ fn tool_specs() -> Value {
         {
             "name": "tare_stats",
             "description": "Cumulative approximate token savings for this MCP session.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "tare_remember",
+            "description": "Persist a memory for recall across sessions. Deduplicates by content hash; returns the memory id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "Content to remember"},
+                    "source": {"type": "string", "description": "Source label (default: \"mcp\")"}
+                },
+                "required": ["content"]
+            }
+        },
+        {
+            "name": "tare_recall",
+            "description": "Search memories by query terms. Returns top matches ordered by relevance (id, content, source, score).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "limit": {"type": "integer", "description": "Max results (default 5)"}
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "tare_forget",
+            "description": "Delete a memory by id (cascades provenance). Returns whether it existed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "Memory id to delete"}
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "tare_memory_stats",
+            "description": "Aggregate statistics for the memory store: total count and distinct source count.",
             "inputSchema": {"type": "object", "properties": {}}
         }
     ])
@@ -176,6 +219,74 @@ fn call_tool(state: &mut State, name: &str, args: &Value) -> Result<String, Stri
                 state.originals.len()
             ))
         }
+        "tare_remember" => {
+            let content = args
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or("missing 'content'")?;
+            let source = args.get("source").and_then(Value::as_str).unwrap_or("mcp");
+            match &state.memory {
+                None => Err("memory store unavailable".to_string()),
+                Some(mem) => {
+                    let id = mem.remember(content, source).map_err(|e| e.to_string())?;
+                    Ok(format!("remembered id={id}"))
+                }
+            }
+        }
+        "tare_recall" => {
+            let query = args
+                .get("query")
+                .and_then(Value::as_str)
+                .ok_or("missing 'query'")?;
+            let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(5) as usize;
+            match &state.memory {
+                None => Err("memory store unavailable".to_string()),
+                Some(mem) => {
+                    let hits = mem.recall(query, limit).map_err(|e| e.to_string())?;
+                    if hits.is_empty() {
+                        Ok("no matches found".to_string())
+                    } else {
+                        let lines: Vec<String> = hits
+                            .iter()
+                            .map(|m| {
+                                format!(
+                                    "id={} score={:.1} source={:?} content={:?}",
+                                    m.id, m.score, m.source, m.content
+                                )
+                            })
+                            .collect();
+                        Ok(lines.join("\n"))
+                    }
+                }
+            }
+        }
+        "tare_forget" => {
+            let id = args
+                .get("id")
+                .and_then(Value::as_i64)
+                .ok_or("missing 'id'")?;
+            match &state.memory {
+                None => Err("memory store unavailable".to_string()),
+                Some(mem) => {
+                    let existed = mem.forget(id).map_err(|e| e.to_string())?;
+                    if existed {
+                        Ok(format!("forgotten id={id}"))
+                    } else {
+                        Ok(format!("id={id} not found"))
+                    }
+                }
+            }
+        }
+        "tare_memory_stats" => match &state.memory {
+            None => Err("memory store unavailable".to_string()),
+            Some(mem) => {
+                let s = mem.stats().map_err(|e| e.to_string())?;
+                Ok(format!(
+                    "memories={} distinct_sources={}",
+                    s.count, s.sources
+                ))
+            }
+        },
         other => Err(format!("unknown tool '{other}'")),
     }
 }
@@ -224,7 +335,10 @@ fn main() {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    let mut state = State::default();
+    let mut state = State {
+        memory: Memory::open_default().ok(),
+        ..Default::default()
+    };
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let line = line.trim();
@@ -264,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_has_all_five() {
+    fn tools_list_has_all_nine() {
         let resp = handle(
             &mut State::default(),
             &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
@@ -283,6 +397,10 @@ mod tests {
             "tare_compress",
             "tare_expand",
             "tare_stats",
+            "tare_remember",
+            "tare_recall",
+            "tare_forget",
+            "tare_memory_stats",
         ] {
             assert!(names.contains(&n), "missing tool {n}");
         }
@@ -348,5 +466,145 @@ mod tests {
             "params":{"name":"tare_expand","arguments":{"id":"deadbeef"}}});
         let v: Value = serde_json::from_str(&handle(&mut s, &call).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true);
+    }
+
+    // ── memory tool helpers ──────────────────────────────────────────────────
+
+    fn state_with_mem() -> State {
+        State {
+            memory: Some(Memory::open(":memory:").expect("in-memory db")),
+            ..Default::default()
+        }
+    }
+
+    fn tool_call(s: &mut State, name: &str, args: Value) -> Value {
+        let msg = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}});
+        serde_json::from_str(&handle(s, &msg).unwrap()).unwrap()
+    }
+
+    fn text_of(v: &Value) -> &str {
+        v["result"]["content"][0]["text"].as_str().unwrap()
+    }
+
+    fn is_error(v: &Value) -> bool {
+        v["result"]["isError"].as_bool().unwrap_or(false)
+    }
+
+    #[test]
+    fn memory_unavailable_when_none() {
+        let mut s = State::default(); // memory: None
+        let v = tool_call(&mut s, "tare_remember", json!({"content": "hello"}));
+        assert!(is_error(&v), "should error when memory is None");
+        assert!(text_of(&v).contains("unavailable"));
+    }
+
+    #[test]
+    fn remember_returns_id() {
+        let mut s = state_with_mem();
+        let v = tool_call(&mut s, "tare_remember", json!({"content": "cargo is fast"}));
+        assert!(!is_error(&v));
+        assert!(text_of(&v).contains("id="), "response must include id=N");
+    }
+
+    #[test]
+    fn remember_uses_default_source_mcp() {
+        let mut s = state_with_mem();
+        tool_call(&mut s, "tare_remember", json!({"content": "source test"}));
+        let v = tool_call(&mut s, "tare_recall", json!({"query": "source test"}));
+        assert!(!is_error(&v));
+        assert!(
+            text_of(&v).contains("\"mcp\""),
+            "default source should be mcp"
+        );
+    }
+
+    #[test]
+    fn recall_finds_remembered_content() {
+        let mut s = state_with_mem();
+        tool_call(
+            &mut s,
+            "tare_remember",
+            json!({"content": "Rust is memory safe", "source": "agent-x"}),
+        );
+        let v = tool_call(&mut s, "tare_recall", json!({"query": "rust memory"}));
+        assert!(!is_error(&v));
+        let text = text_of(&v);
+        assert!(
+            text.contains("Rust is memory safe"),
+            "recalled content missing"
+        );
+        assert!(text.contains("agent-x"), "source missing");
+    }
+
+    #[test]
+    fn recall_no_match_returns_no_matches() {
+        let mut s = state_with_mem();
+        let v = tool_call(&mut s, "tare_recall", json!({"query": "xyzzy nonexistent"}));
+        assert!(!is_error(&v));
+        assert!(
+            text_of(&v).contains("no matches"),
+            "expected 'no matches' message"
+        );
+    }
+
+    #[test]
+    fn forget_removes_and_reports_existence() {
+        let mut s = state_with_mem();
+        // remember → grab id
+        let rv = tool_call(
+            &mut s,
+            "tare_remember",
+            json!({"content": "to be forgotten"}),
+        );
+        let id_str = text_of(&rv).trim_start_matches("remembered id=").trim();
+        let id: i64 = id_str.parse().unwrap();
+
+        // forget it → existed
+        let fv = tool_call(&mut s, "tare_forget", json!({"id": id}));
+        assert!(!is_error(&fv));
+        assert!(text_of(&fv).contains("forgotten"), "should say 'forgotten'");
+
+        // forget again → not found
+        let fv2 = tool_call(&mut s, "tare_forget", json!({"id": id}));
+        assert!(!is_error(&fv2));
+        assert!(
+            text_of(&fv2).contains("not found"),
+            "should say 'not found'"
+        );
+
+        // recall confirms gone
+        let cv = tool_call(&mut s, "tare_recall", json!({"query": "to be forgotten"}));
+        assert!(text_of(&cv).contains("no matches"));
+    }
+
+    #[test]
+    fn memory_stats_counts_correctly() {
+        let mut s = state_with_mem();
+        tool_call(
+            &mut s,
+            "tare_remember",
+            json!({"content": "alpha", "source": "s1"}),
+        );
+        tool_call(
+            &mut s,
+            "tare_remember",
+            json!({"content": "beta",  "source": "s1"}),
+        );
+        tool_call(
+            &mut s,
+            "tare_remember",
+            json!({"content": "gamma", "source": "s2"}),
+        );
+        let v = tool_call(&mut s, "tare_memory_stats", json!({}));
+        assert!(!is_error(&v));
+        let text = text_of(&v);
+        assert!(
+            text.contains("memories=3"),
+            "expected 3 memories, got: {text}"
+        );
+        assert!(
+            text.contains("distinct_sources=2"),
+            "expected 2 sources, got: {text}"
+        );
     }
 }

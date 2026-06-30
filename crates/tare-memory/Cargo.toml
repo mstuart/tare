@@ -1,0 +1,17 @@
+[package]
+name = "tare-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Persistent cross-agent memory store for Tare: SQLite-backed remember/recall with content-hash dedup and multi-source provenance."
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+xxhash-rust = { workspace = true }

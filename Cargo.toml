@@ -8,6 +8,7 @@ members = [
     "crates/tare-bench",
     "crates/tare-cli",
     "crates/tare-mcp",
+    "crates/tare-memory",
 ]
 
 [workspace.package]
