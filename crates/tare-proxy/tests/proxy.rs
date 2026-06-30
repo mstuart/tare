@@ -4,7 +4,7 @@
 use axum::{body::Bytes, extract::State, routing::post, Router};
 use std::sync::{Arc, Mutex};
 use tare_proxy::{
-    server::{app, ProxyState},
+    server::{app, ProxyState, RuntimeCfg},
     CompressOpts,
 };
 
@@ -26,6 +26,35 @@ async fn spawn(router: Router) -> u16 {
     port
 }
 
+/// Construct a ProxyState with zero-initialized observability counters and no sessions.
+/// `runtime_cfg` mirrors the supplied `opts.enabled` / `opts.recency_keep`.
+fn make_state(upstream: String, opts: CompressOpts) -> Arc<ProxyState> {
+    let runtime_cfg = RuntimeCfg {
+        enabled: opts.enabled,
+        recency_keep: opts.recency_keep,
+    };
+    Arc::new(ProxyState {
+        client: reqwest::Client::new(),
+        upstream,
+        runtime_cfg: Mutex::new(runtime_cfg),
+        opts,
+        holdout_frac: 0.0,
+        start: std::time::Instant::now(),
+        monitors: Default::default(),
+        outputs: Default::default(),
+        seen_sessions: Default::default(),
+        cnt_requests: Default::default(),
+        cnt_input_tokens: Default::default(),
+        cnt_net_tokens: Default::default(),
+        cnt_dropped_tokens: Default::default(),
+        cnt_halted_sessions: Default::default(),
+        cnt_shaped_requests: Default::default(),
+        cnt_shaped_output_tokens: Default::default(),
+        cnt_holdout_requests: Default::default(),
+        cnt_holdout_output_tokens: Default::default(),
+    })
+}
+
 #[tokio::test]
 async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
     // 1. mock upstream
@@ -36,17 +65,14 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
     let up_port = spawn(upstream).await;
 
     // 2. tare proxy -> mock upstream
-    let state = Arc::new(ProxyState {
-        client: reqwest::Client::new(),
-        upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts {
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
             enabled: true,
             recency_keep: 1,
             min_savings: 0,
         },
-        monitors: Default::default(),
-        outputs: Default::default(),
-    });
+    );
     let proxy_port = spawn(app(state)).await;
 
     // give the servers a tick to be ready
@@ -102,17 +128,14 @@ async fn openai_proxy_compresses_then_forwards_and_returns_upstream_response() {
     let up_port = spawn(upstream).await;
 
     // 2. tare proxy -> mock upstream
-    let state = Arc::new(ProxyState {
-        client: reqwest::Client::new(),
-        upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts {
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
             enabled: true,
             recency_keep: 0,
             min_savings: 0,
         },
-        monitors: Default::default(),
-        outputs: Default::default(),
-    });
+    );
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -170,17 +193,14 @@ async fn proxy_response_carries_tare_report_headers() {
     let up_port = spawn(upstream).await;
 
     // 2. tare proxy -> mock upstream
-    let state = Arc::new(ProxyState {
-        client: reqwest::Client::new(),
-        upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts {
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
             enabled: true,
             recency_keep: 1,
             min_savings: 0,
         },
-        monitors: Default::default(),
-        outputs: Default::default(),
-    });
+    );
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -223,10 +243,7 @@ async fn proxy_response_carries_tare_report_headers() {
 async fn halts_compression_after_three_low_hit_rate_turns() {
     use axum::{body::Bytes, extract::State, routing::post, Router};
     use std::sync::{Arc, Mutex};
-    use tare_proxy::{
-        server::{app, ProxyState},
-        CompressOpts,
-    };
+    use tare_proxy::{server::app, CompressOpts};
 
     // mock upstream: records every received body, returns a LOW cache hit-rate usage (h ~= 0.001)
     type Rec = Arc<Mutex<Vec<String>>>;
@@ -242,17 +259,14 @@ async fn halts_compression_after_three_low_hit_rate_turns() {
         .with_state(rec.clone());
     let up_port = spawn(upstream).await;
 
-    let state = Arc::new(ProxyState {
-        client: reqwest::Client::new(),
-        upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts {
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
             enabled: true,
             recency_keep: 1,
             min_savings: 0,
         },
-        monitors: Default::default(),
-        outputs: Default::default(),
-    });
+    );
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -304,17 +318,14 @@ async fn skeletonizes_code_via_controller_under_high_fill() {
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
     let up_port = spawn(upstream).await;
-    let state = Arc::new(ProxyState {
-        client: reqwest::Client::new(),
-        upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts {
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
             enabled: true,
             recency_keep: 1,
             min_savings: 0,
         },
-        monitors: Default::default(),
-        outputs: Default::default(),
-    });
+    );
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -391,17 +402,14 @@ async fn verbosity_spike_backs_off_compression_end_to_end() {
         .route("/v1/chat/completions", post(up))
         .with_state((rec.clone(), cnt.clone()));
     let up_port = spawn(upstream).await;
-    let state = Arc::new(ProxyState {
-        client: reqwest::Client::new(),
-        upstream: format!("http://127.0.0.1:{up_port}"),
-        opts: CompressOpts {
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
             enabled: true,
             recency_keep: 0,
             min_savings: 0,
         },
-        monitors: Default::default(),
-        outputs: Default::default(),
-    });
+    );
     let proxy_port = spawn(app(state)).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -492,4 +500,305 @@ async fn count_tokens_exact_parses_input_tokens_and_falls_back() {
     )
     .await;
     assert_eq!((c3, exact3), (777, false));
+}
+
+// ── Admin surface tests ────────────────────────────────────────────────────────
+
+/// GET /admin/stats returns a JSON object with the exact fields specified in the contract,
+/// and the values are sensible after a couple of proxy requests.
+#[tokio::test]
+async fn admin_stats_returns_correct_shape_and_counts_requests() {
+    let rec: Recorder = Arc::new(Mutex::new(None));
+    let upstream = Router::new()
+        .route("/v1/messages", post(upstream_handler))
+        .with_state(rec.clone());
+    let up_port = spawn(upstream).await;
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
+            enabled: true,
+            recency_keep: 4,
+            min_savings: 0,
+        },
+    );
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let req = serde_json::json!({
+        "model":"claude-x","max_tokens":100,
+        "messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"kafka unrelated"}]},
+            {"role":"user","content":"fix jwt"}
+        ]
+    });
+    let client = reqwest::Client::new();
+    // send two requests
+    for _ in 0..2 {
+        client
+            .post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+            .header("x-api-key", "sk-test")
+            .json(&req)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+    }
+
+    let stats: serde_json::Value = client
+        .get(format!("http://127.0.0.1:{proxy_port}/admin/stats"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    // Required top-level fields are present with correct types
+    assert!(stats["requests"].is_u64(), "requests must be u64: {stats}");
+    assert!(
+        stats["input_tokens"].is_u64(),
+        "input_tokens must be u64: {stats}"
+    );
+    assert!(
+        stats["net_tokens"].is_u64(),
+        "net_tokens must be u64: {stats}"
+    );
+    assert!(
+        stats["dropped_tokens"].is_u64(),
+        "dropped_tokens must be u64: {stats}"
+    );
+    assert!(
+        stats["savings_ratio"].is_f64(),
+        "savings_ratio must be f64: {stats}"
+    );
+    assert!(stats["sessions"].is_u64(), "sessions must be u64: {stats}");
+    assert!(
+        stats["halted_sessions"].is_u64(),
+        "halted_sessions must be u64: {stats}"
+    );
+    assert!(
+        stats["enabled"].is_boolean(),
+        "enabled must be bool: {stats}"
+    );
+    assert!(
+        stats["recency_keep"].is_u64(),
+        "recency_keep must be u64: {stats}"
+    );
+    assert!(
+        stats["uptime_secs"].is_u64(),
+        "uptime_secs must be u64: {stats}"
+    );
+    // output sub-object
+    let out = &stats["output"];
+    assert!(
+        out["shaped_requests"].is_u64(),
+        "output.shaped_requests: {out}"
+    );
+    assert!(
+        out["shaped_output_tokens"].is_u64(),
+        "output.shaped_output_tokens: {out}"
+    );
+    assert!(
+        out["holdout_requests"].is_u64(),
+        "output.holdout_requests: {out}"
+    );
+    assert!(
+        out["holdout_output_tokens"].is_u64(),
+        "output.holdout_output_tokens: {out}"
+    );
+
+    // request counter reflects the two requests we sent
+    assert_eq!(
+        stats["requests"].as_u64().unwrap(),
+        2,
+        "two requests → requests counter == 2"
+    );
+    // savings_ratio in [0, 1]
+    let sr = stats["savings_ratio"].as_f64().unwrap();
+    assert!(
+        (0.0..=1.0).contains(&sr),
+        "savings_ratio out of range: {sr}"
+    );
+    // enabled mirrors what we set
+    assert!(
+        stats["enabled"].as_bool().unwrap(),
+        "enabled should be true"
+    );
+    assert_eq!(stats["recency_keep"].as_u64().unwrap(), 4);
+    // with no holdout, holdout_requests == 0 and shaped_requests == 2
+    assert_eq!(out["holdout_requests"].as_u64().unwrap(), 0);
+    assert_eq!(out["shaped_requests"].as_u64().unwrap(), 2);
+}
+
+/// POST /admin/runtime-env with TARE_ENABLED=false → response reports enabled:false, and
+/// subsequent proxy requests bypass compression (passthrough).
+#[tokio::test]
+async fn admin_runtime_env_disables_and_reenables_compression() {
+    let rec: Recorder = Arc::new(Mutex::new(None));
+    let upstream = Router::new()
+        .route("/v1/messages", post(upstream_handler))
+        .with_state(rec.clone());
+    let up_port = spawn(upstream).await;
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
+            enabled: true,
+            recency_keep: 0,
+            min_savings: 0,
+        },
+    );
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::new();
+    // Two results from the same tool ("run") → SupersessionPass drops the first (kafka).
+    // This is the same setup used in the basic compression test, so we know it compresses.
+    let compressible_req = serde_json::json!({
+        "model":"claude-x","max_tokens":100,
+        "messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"run","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"kafka partitions offsets totally unrelated"}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"jwt authentication middleware"}]},
+            {"role":"user","content":"fix the authentication jwt bug"}
+        ]
+    });
+
+    // Before disable: compression is active
+    client
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+        .header("x-api-key", "sk-test")
+        .json(&compressible_req)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let before = rec.lock().unwrap().clone().unwrap();
+    assert!(
+        before.contains("[tare"),
+        "before disable: compression active: {before}"
+    );
+
+    // Disable via runtime-env
+    let disable_resp: serde_json::Value = client
+        .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .json(&serde_json::json!({"TARE_ENABLED": "false"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        !disable_resp["enabled"].as_bool().unwrap(),
+        "runtime-env response must reflect disabled: {disable_resp}"
+    );
+
+    // After disable: passthrough (no [tare stub)
+    client
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+        .header("x-api-key", "sk-test")
+        .json(&compressible_req)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let after_disable = rec.lock().unwrap().clone().unwrap();
+    assert!(
+        !after_disable.contains("[tare"),
+        "after disable: passthrough expected: {after_disable}"
+    );
+
+    // Re-enable and verify compression returns
+    let enable_resp: serde_json::Value = client
+        .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .json(&serde_json::json!({"TARE_ENABLED": "true"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        enable_resp["enabled"].as_bool().unwrap(),
+        "runtime-env response must reflect re-enabled: {enable_resp}"
+    );
+    client
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/messages"))
+        .header("x-api-key", "sk-test")
+        .json(&compressible_req)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let after_enable = rec.lock().unwrap().clone().unwrap();
+    assert!(
+        after_enable.contains("[tare"),
+        "after re-enable: compression active again: {after_enable}"
+    );
+}
+
+/// POST /admin/runtime-env with TARE_RECENCY updates recency_keep and the response confirms it.
+#[tokio::test]
+async fn admin_runtime_env_updates_recency_keep() {
+    let rec: Recorder = Arc::new(Mutex::new(None));
+    let upstream = Router::new()
+        .route("/v1/messages", post(upstream_handler))
+        .with_state(rec.clone());
+    let up_port = spawn(upstream).await;
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
+            enabled: true,
+            recency_keep: 4,
+            min_savings: 0,
+        },
+    );
+    let proxy_port = spawn(app(state)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let client = reqwest::Client::new();
+
+    // Update recency_keep to 8
+    let resp: serde_json::Value = client
+        .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .json(&serde_json::json!({"TARE_RECENCY": "8"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp["recency_keep"].as_u64().unwrap(),
+        8,
+        "recency_keep should update to 8: {resp}"
+    );
+    assert!(
+        resp["enabled"].as_bool().unwrap(),
+        "enabled unchanged: {resp}"
+    );
+
+    // Verify stats also reflects the new recency_keep
+    let stats: serde_json::Value = client
+        .get(format!("http://127.0.0.1:{proxy_port}/admin/stats"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        stats["recency_keep"].as_u64().unwrap(),
+        8,
+        "stats recency_keep should reflect update: {stats}"
+    );
 }

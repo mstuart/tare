@@ -1,7 +1,7 @@
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tare_proxy::{
-    server::{app, ProxyState},
+    server::{app, ProxyState, RuntimeCfg},
     CompressOpts,
 };
 
@@ -41,6 +41,11 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let holdout_frac = std::env::var("TARE_OUTPUT_HOLDOUT")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
     let state = Arc::new(ProxyState {
         client,
         upstream,
@@ -49,8 +54,24 @@ async fn main() -> ExitCode {
             recency_keep,
             min_savings: 0,
         },
+        runtime_cfg: Mutex::new(RuntimeCfg {
+            enabled,
+            recency_keep,
+        }),
+        holdout_frac,
+        start: std::time::Instant::now(),
         monitors: Default::default(),
         outputs: Default::default(),
+        seen_sessions: Default::default(),
+        cnt_requests: Default::default(),
+        cnt_input_tokens: Default::default(),
+        cnt_net_tokens: Default::default(),
+        cnt_dropped_tokens: Default::default(),
+        cnt_halted_sessions: Default::default(),
+        cnt_shaped_requests: Default::default(),
+        cnt_shaped_output_tokens: Default::default(),
+        cnt_holdout_requests: Default::default(),
+        cnt_holdout_output_tokens: Default::default(),
     });
 
     let listener = match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {

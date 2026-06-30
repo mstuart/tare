@@ -8,28 +8,54 @@ use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
 use bytes::Bytes;
 use futures_util::StreamExt;
-use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
+use std::time::Instant;
 use tare_cache::Provider;
 use tare_tokenize::{ApproxCounter, TokenCounter};
 
+/// Runtime-mutable configuration (hot-synced without restart via POST /admin/runtime-env).
+pub struct RuntimeCfg {
+    pub enabled: bool,
+    pub recency_keep: usize,
+}
+
 pub struct ProxyState {
     pub client: reqwest::Client,
-    pub upstream: String, // e.g. "https://api.anthropic.com"
-    pub opts: CompressOpts,
+    pub upstream: String,               // e.g. "https://api.anthropic.com"
+    pub opts: CompressOpts, // only min_savings used at runtime; enabled/recency_keep → runtime_cfg
+    pub runtime_cfg: Mutex<RuntimeCfg>, // hot-swappable enabled + recency_keep
+    pub holdout_frac: f64,  // TARE_OUTPUT_HOLDOUT: deterministic per-session bypass fraction
+    pub start: Instant,     // process start for uptime_secs
     pub monitors: Mutex<HashMap<u64, HitRateMonitor>>, // per-session hit-rate monitors (R5)
     pub outputs: Mutex<HashMap<u64, OutputMonitor>>, // per-session output-side monitors (compression-paradox sensor)
+    pub seen_sessions: Mutex<HashSet<u64>>, // distinct session_ids seen (soft-bounded by MAX_SESSIONS)
+    // Cumulative counters (Relaxed ordering: pure observability, no cross-thread sequencing needed)
+    pub cnt_requests: AtomicU64,
+    pub cnt_input_tokens: AtomicU64,
+    pub cnt_net_tokens: AtomicU64,
+    pub cnt_dropped_tokens: AtomicU64, // = sum(input_tokens - net_tokens) per report
+    pub cnt_halted_sessions: AtomicU64, // distinct sessions that transitioned to halted (in tee)
+    pub cnt_shaped_requests: AtomicU64,
+    pub cnt_shaped_output_tokens: AtomicU64,
+    pub cnt_holdout_requests: AtomicU64,
+    pub cnt_holdout_output_tokens: AtomicU64,
 }
 
 pub fn app(state: Arc<ProxyState>) -> Router {
     Router::new()
         .route("/v1/messages", post(handle_messages))
         .route("/v1/chat/completions", post(handle_chat))
+        .route("/admin/stats", get(handle_stats))
+        .route("/admin/runtime-env", post(handle_runtime_env))
         .with_state(state)
 }
 
@@ -160,6 +186,75 @@ const CONTEXT_WINDOW_TOKENS: f64 = 200_000.0; // default model-window estimate; 
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024; // cap request-body buffering (DoS/OOM guard); 413 above this
 const MAX_SESSIONS: usize = 10_000; // bound the per-session monitor maps (cleared on overflow; soft state)
 
+async fn handle_stats(State(state): State<Arc<ProxyState>>) -> impl IntoResponse {
+    let requests = state.cnt_requests.load(Ordering::Relaxed);
+    let input_tokens = state.cnt_input_tokens.load(Ordering::Relaxed);
+    let net_tokens = state.cnt_net_tokens.load(Ordering::Relaxed);
+    let dropped_tokens = state.cnt_dropped_tokens.load(Ordering::Relaxed);
+    let savings_ratio = if input_tokens == 0 {
+        0.0_f64
+    } else {
+        1.0 - net_tokens as f64 / input_tokens as f64
+    };
+    let sessions = state
+        .seen_sessions
+        .lock()
+        .map(|s| s.len() as u64)
+        .unwrap_or(0);
+    let halted_sessions = state.cnt_halted_sessions.load(Ordering::Relaxed);
+    let shaped_requests = state.cnt_shaped_requests.load(Ordering::Relaxed);
+    let shaped_output_tokens = state.cnt_shaped_output_tokens.load(Ordering::Relaxed);
+    let holdout_requests = state.cnt_holdout_requests.load(Ordering::Relaxed);
+    let holdout_output_tokens = state.cnt_holdout_output_tokens.load(Ordering::Relaxed);
+    let (enabled, recency_keep) = state
+        .runtime_cfg
+        .lock()
+        .map(|c| (c.enabled, c.recency_keep))
+        .unwrap_or((false, 0));
+    let uptime_secs = state.start.elapsed().as_secs();
+
+    Json(serde_json::json!({
+        "requests": requests,
+        "input_tokens": input_tokens,
+        "net_tokens": net_tokens,
+        "dropped_tokens": dropped_tokens,
+        "savings_ratio": savings_ratio,
+        "sessions": sessions,
+        "halted_sessions": halted_sessions,
+        "output": {
+            "shaped_requests": shaped_requests,
+            "shaped_output_tokens": shaped_output_tokens,
+            "holdout_requests": holdout_requests,
+            "holdout_output_tokens": holdout_output_tokens
+        },
+        "enabled": enabled,
+        "recency_keep": recency_keep,
+        "uptime_secs": uptime_secs
+    }))
+}
+
+async fn handle_runtime_env(
+    State(state): State<Arc<ProxyState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let mut cfg = match state.runtime_cfg.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    if let Some(v) = body.get("TARE_ENABLED").and_then(|v| v.as_str()) {
+        cfg.enabled = v != "0" && v != "false";
+    }
+    if let Some(v) = body.get("TARE_RECENCY").and_then(|v| v.as_str()) {
+        if let Ok(n) = v.parse::<usize>() {
+            cfg.recency_keep = n;
+        }
+    }
+    Json(serde_json::json!({
+        "enabled": cfg.enabled,
+        "recency_keep": cfg.recency_keep
+    }))
+}
+
 async fn handle_generic(
     state: Arc<ProxyState>,
     headers: HeaderMap,
@@ -170,6 +265,43 @@ async fn handle_generic(
 ) -> Response {
     let parsed = serde_json::from_slice::<serde_json::Value>(&body_bytes).ok();
     let sid = parsed.as_ref().map(session_id);
+
+    // Runtime-mutable config: read once per request (a snapshot; changes take effect next request)
+    let (enabled, recency_keep) = {
+        let cfg = state.runtime_cfg.lock().unwrap_or_else(|e| e.into_inner());
+        (cfg.enabled, cfg.recency_keep)
+    };
+    let effective_opts = CompressOpts {
+        enabled,
+        recency_keep,
+        min_savings: state.opts.min_savings,
+    };
+
+    // Session tracking: first time this session_id is seen across the process lifetime
+    if let Some(id) = sid {
+        if let Ok(mut ss) = state.seen_sessions.lock() {
+            if ss.len() >= MAX_SESSIONS {
+                ss.clear(); // soft cap — same as monitor-map clearing; acceptable for observability
+            }
+            ss.insert(id);
+        }
+    }
+
+    // Holdout bypass: deterministic per-session (session_id mod 10000 / 10000.0 < holdout_frac).
+    // A holdout session BYPASSES compression (passthrough) so its output_tokens accumulate in the
+    // holdout arm for a clean output-savings A/B measurement.
+    let in_holdout = state.holdout_frac > 0.0
+        && sid
+            .map(|id| (id % 10_000) as f64 / 10_000.0 < state.holdout_frac)
+            .unwrap_or(false);
+
+    // Increment per-request counters up front (before any early returns via the Err arm below)
+    state.cnt_requests.fetch_add(1, Ordering::Relaxed);
+    if in_holdout {
+        state.cnt_holdout_requests.fetch_add(1, Ordering::Relaxed);
+    } else {
+        state.cnt_shaped_requests.fetch_add(1, Ordering::Relaxed);
+    }
 
     // R5: if this session is halted, do NOT compress — byte-exact passthrough.
     let halted = match sid {
@@ -212,18 +344,34 @@ async fn handle_generic(
         controller(spiking, fill)
     };
 
-    let (forward_body, report) = match (&parsed, halted) {
+    // bypass = monitor-halted OR holdout: both produce byte-exact passthrough
+    let bypass = halted || in_holdout;
+    let (forward_body, report) = match (&parsed, bypass) {
         (Some(req_json), false) => {
             // Controller drives per-turn aggression from {verbosity-spike, context-fill}; the
-            // cache-floor halt is the separate full-passthrough branch below.
-            let (compressed, report) = compress_fn(req_json, &state.opts, aggr);
+            // cache-floor halt and holdout bypass are the separate full-passthrough branches below.
+            let (compressed, report) = compress_fn(req_json, &effective_opts, aggr);
             match serde_json::to_vec(&compressed) {
                 Ok(v) => (v, report),
                 Err(_) => (body_bytes.to_vec(), None), // serialize failed: forward original, drop the now-wrong report
             }
         }
-        _ => (body_bytes.to_vec(), None), // unparseable OR halted -> forward original unchanged
+        _ => (body_bytes.to_vec(), None), // unparseable OR bypass -> forward original unchanged
     };
+
+    // Accumulate token counters from this turn's compression report
+    if let Some(r) = &report {
+        state
+            .cnt_input_tokens
+            .fetch_add(r.input_tokens as u64, Ordering::Relaxed);
+        state
+            .cnt_net_tokens
+            .fetch_add(r.net_tokens as u64, Ordering::Relaxed);
+        state.cnt_dropped_tokens.fetch_add(
+            r.input_tokens.saturating_sub(r.net_tokens) as u64,
+            Ordering::Relaxed,
+        );
+    }
 
     let url = format!("{}{}", state.upstream.trim_end_matches('/'), upstream_path);
     let mut fwd = state.client.post(&url).body(forward_body);
@@ -260,6 +408,8 @@ async fn handle_generic(
             // observability: which controller tier this turn ran at
             let aggr_label = if halted {
                 "halt"
+            } else if in_holdout {
+                "holdout"
             } else if aggr.skip_relevance {
                 "backoff"
             } else if aggr.lossy_max_rows > 0 || aggr.lossy_max_field > 0 {
@@ -279,9 +429,10 @@ async fn handle_generic(
                     .map(|r| (r.input_tokens, r.net_tokens, r.dropped))
                     .unwrap_or((0, 0, 0));
                 eprintln!(
-                    "[tare-proxy] {} {upstream_path} in={inp} net={net} dropped={dropped} aggr={aggr_label}{}",
+                    "[tare-proxy] {} {upstream_path} in={inp} net={net} dropped={dropped} aggr={aggr_label}{}{}",
                     status.as_u16(),
-                    if halted { " halted" } else { "" }
+                    if halted { " halted" } else { "" },
+                    if in_holdout { " holdout" } else { "" }
                 );
             }
 
@@ -309,7 +460,12 @@ async fn handle_generic(
                     if let Some(h) = hit_rate(read, creation) {
                         if let Ok(mut map) = state_tee.monitors.lock() {
                             if !map.contains_key(&id) && map.len() >= MAX_SESSIONS { map.clear(); }
+                            let was_halted = map.get(&id).map(|m| m.halted()).unwrap_or(false);
                             map.entry(id).or_insert_with(|| HitRateMonitor::new(provider)).observe(h);
+                            // Detect halt transition: increment counter exactly once per session
+                            if !was_halted && map.get(&id).map(|m| m.halted()).unwrap_or(false) {
+                                state_tee.cnt_halted_sessions.fetch_add(1, Ordering::Relaxed);
+                            }
                         }
                     }
                 }
@@ -321,6 +477,12 @@ async fn handle_generic(
                     if let Ok(mut map) = state_tee.outputs.lock() {
                         if !map.contains_key(&id) && map.len() >= MAX_SESSIONS { map.clear(); }
                         map.entry(id).or_default().observe(out_tok);
+                    }
+                    // Route output_tokens to shaped or holdout arm
+                    if in_holdout {
+                        state_tee.cnt_holdout_output_tokens.fetch_add(out_tok, Ordering::Relaxed);
+                    } else {
+                        state_tee.cnt_shaped_output_tokens.fetch_add(out_tok, Ordering::Relaxed);
                     }
                 }
             });
