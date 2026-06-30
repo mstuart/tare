@@ -109,6 +109,24 @@ Response headers report what it did: `x-tare-net-tokens`, `x-tare-dropped`, `x-t
 and `POST /admin/runtime-env` (hot-sync `TARE_ENABLED`/`TARE_RECENCY` live with no restart — send
 `Content-Type: application/json`).
 
+### Python
+
+```bash
+pip install tare-compress
+```
+
+```python
+import tare
+
+skeleton = tare.skeletonize(open("big.rs").read(), "big.rs")
+slim     = tare.compact_html(raw_html)
+out      = tare.compress(blocks_json, task="fix the login bug")
+```
+
+All functions: `compress`, `skeletonize`, `compact_lossy`, `compact_html`, `compact_csv`,
+`slim_schema`, `telegraphic`, `deref_images`, `crush`, `expand`. The wheel is abi3 — one
+build per platform, works on Python 3.9+.
+
 ## Use with your Claude subscription — MCP, no API key
 
 The proxy forwards whatever auth the client sends, so it works two ways. With a **billable API key** the
@@ -254,6 +272,7 @@ output — none of the others do all four.
 | `tare-cli` | the `tare` command |
 | `tare-memory` | persistent cross-session memory: SQLite-backed remember/recall with content-hash dedup and multi-source provenance |
 | `tare-mcp` | MCP (stdio) server: compression tools + a reversible `tare_expand` + memory tools |
+| `tare-py` | Python bindings (PyPI: `tare-compress`): abi3 wheel, py3.9+, exposes all core transforms |
 | `tare-bench` | competitive benchmarks (not published) |
 
 ## Cargo features
