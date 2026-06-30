@@ -63,7 +63,7 @@ enum Command {
     /// Code reads are ~67-76% of coding-agent tokens; reversible by re-reading. Passthrough if the
     /// language is unknown or nothing is elidable.
     Skeletonize {
-        /// File path, used for language detection (.rs/.py/.js/.ts/.tsx/.go).
+        /// File path, used for language detection (.rs/.py/.js/.ts/.tsx/.go/.java/.c/.h/.cpp/.cc/.cxx/.hpp/.hh/.hxx/.pl/.pm).
         #[arg(long)]
         path: String,
     },

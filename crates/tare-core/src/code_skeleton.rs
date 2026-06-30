@@ -12,31 +12,53 @@
 use tree_sitter::Parser;
 
 /// Body node kinds we elide (the implementation block of a function/method).
-const BODY_KINDS: &[&str] = &["block", "statement_block"];
+const BODY_KINDS: &[&str] = &[
+    "block",              // rust/python/js/ts/go/java methods/perl
+    "statement_block",    // js/ts
+    "compound_statement", // c/cpp
+    "constructor_body",   // java constructors
+];
 
 /// Parent kinds that mark a body as a function/method implementation — NOT a class/impl/module block
-/// (those we keep, so the signatures inside them survive). Covers rust/python/js/ts/go shapes.
+/// (those we keep, so the signatures inside them survive). Covers rust/python/js/ts/go/java/c/cpp/perl.
 const FUNCTION_KINDS: &[&str] = &[
-    "function_item",                  // rust
-    "function_definition",            // python, c/cpp
-    "function_declaration",           // js, go, ts
-    "method_definition",              // js/ts class methods
-    "method_declaration",             // go, ts interfaces
-    "arrow_function",                 // js/ts
-    "function_expression",            // js
-    "generator_function",             // js
-    "generator_function_declaration", // js
-    "closure_expression",             // rust closures `|..| { .. }`
+    "function_item",                   // rust
+    "function_definition",             // python, c, cpp, perl (named sub)
+    "function_declaration",            // js, go, ts
+    "method_definition",               // js/ts class methods
+    "method_declaration",              // go, ts interfaces, java methods
+    "arrow_function",                  // js/ts
+    "function_expression",             // js
+    "generator_function",              // js
+    "generator_function_declaration",  // js
+    "closure_expression",              // rust closures `|..| { .. }`
+    "constructor_declaration",         // java
+    "compact_constructor_declaration", // java records
+    "anonymous_function",              // perl anonymous subs `sub { ... }`
 ];
 
 /// Skip eliding bodies shorter than this (keep trivial fns whole; the marker isn't worth it).
 const MIN_BODY_LINES: usize = 3;
 
+/// Language dispatch for the new grammars added in this module (java/c/cpp/perl).
+/// Falls back to `crate::code::lang_for_path` for the original five languages.
+fn lang_for_path_local(path: &str) -> Option<tree_sitter::Language> {
+    let ext = path.rsplit('.').next()?;
+    let lang: tree_sitter::Language = match ext {
+        "java" => tree_sitter_java::LANGUAGE.into(),
+        "c" | "h" => tree_sitter_c::LANGUAGE.into(),
+        "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" => tree_sitter_cpp::LANGUAGE.into(),
+        "pl" | "pm" => tree_sitter_perl::LANGUAGE.into(),
+        _ => return crate::code::lang_for_path(path),
+    };
+    Some(lang)
+}
+
 /// Skeletonize source `text` for a file at `path`: keep declarations/signatures/types/imports/docs,
 /// replace each function or method body with a compact `… N lines elided` marker. Returns `None`
 /// when the language is unknown, nothing is elidable, or the result isn't smaller.
 pub fn skeletonize(text: &str, path: &str) -> Option<String> {
-    let lang = crate::code::lang_for_path(path)?;
+    let lang = lang_for_path_local(path)?;
     let mut parser = Parser::new();
     parser.set_language(&lang).ok()?;
     let tree = parser.parse(text, None)?;
@@ -108,10 +130,9 @@ pub fn skeletonize(text: &str, path: &str) -> Option<String> {
     // If the file didn't fully parse, flag it: some bodies were kept for a structural reason
     // (incomplete parse), not because they were trivial — the agent shouldn't trust them as stubs.
     if had_errors {
-        let cmt = if path.rsplit('.').next() == Some("py") {
-            "#"
-        } else {
-            "//"
+        let cmt = match path.rsplit('.').next() {
+            Some("py" | "pl" | "pm") => "#",
+            _ => "//",
         };
         return Some(format!(
             "{cmt} [tare: parse errors; skeleton may be incomplete]\n{out}"
@@ -248,5 +269,162 @@ func Add(a int, b int) int {
             out.contains("[tare: parse errors"),
             "warns about incomplete parse: {out}"
         );
+    }
+
+    // ── Java ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn java_keeps_method_signature_drops_body() {
+        let src = "\
+import java.util.List;
+
+public class Auth {
+    public String verifyToken(String token) {
+        String decoded = decodeJwt(token);
+        String claims = validate(decoded);
+        return claims;
+    }
+}
+";
+        let out = skeletonize(src, "Auth.java").expect("should skeletonize");
+        assert!(out.contains("import java.util.List;"));
+        assert!(out.contains("public class Auth"));
+        assert!(out.contains("public String verifyToken(String token)"));
+        assert!(!out.contains("decodeJwt"), "body should be elided: {out}");
+        assert!(
+            out.contains("tare:") && out.contains("lines hidden"),
+            "sentinel present: {out}"
+        );
+    }
+
+    #[test]
+    fn java_keeps_constructor_signature_drops_body() {
+        let src = "\
+public class Cache {
+    private final int size;
+
+    public Cache(int size) {
+        this.size = size;
+        this.init();
+        this.warm();
+    }
+}
+";
+        let out = skeletonize(src, "Cache.java").expect("should skeletonize");
+        assert!(out.contains("public Cache(int size)"));
+        assert!(
+            !out.contains("this.init()"),
+            "constructor body elided: {out}"
+        );
+        assert!(
+            out.contains("tare:") && out.contains("lines hidden"),
+            "sentinel present: {out}"
+        );
+    }
+
+    #[test]
+    fn java_passthrough_when_no_elidable_bodies() {
+        // trivial one-liner constructor — under MIN_BODY_LINES, nothing elided
+        let src = "public class Box { public Box() { } }\n";
+        assert!(skeletonize(src, "Box.java").is_none());
+    }
+
+    // ── C ───────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn c_keeps_function_signature_drops_body() {
+        let src = "\
+#include <stdio.h>
+
+int add(int a, int b) {
+    int sum = a + b;
+    printf(\"%d\\n\", sum);
+    return sum;
+}
+";
+        let out = skeletonize(src, "math.c").expect("should skeletonize");
+        assert!(out.contains("#include <stdio.h>"));
+        assert!(out.contains("int add(int a, int b)"));
+        assert!(!out.contains("printf"), "body elided: {out}");
+        assert!(
+            out.contains("tare:") && out.contains("lines hidden"),
+            "sentinel present: {out}"
+        );
+    }
+
+    #[test]
+    fn c_header_extension_is_recognised() {
+        let src =
+            "int compute(int x, int y) {\n    int r = x * y;\n    r = r + 1;\n    return r;\n}\n";
+        let out = skeletonize(src, "util.h").expect("should skeletonize .h");
+        assert!(out.contains("int compute(int x, int y)"));
+        assert!(!out.contains("r = r + 1"), "body elided: {out}");
+    }
+
+    // ── C++ ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cpp_keeps_method_signature_drops_body() {
+        let src = "\
+#include <string>
+
+class Validator {
+public:
+    bool validate(const std::string& input) {
+        bool ok = !input.empty();
+        check(ok);
+        return ok;
+    }
+};
+";
+        let out = skeletonize(src, "validator.cpp").expect("should skeletonize");
+        assert!(out.contains("#include <string>"));
+        assert!(out.contains("class Validator"));
+        assert!(out.contains("bool validate(const std::string& input)"));
+        assert!(!out.contains("input.empty()"), "body elided: {out}");
+        assert!(
+            out.contains("tare:") && out.contains("lines hidden"),
+            "sentinel present: {out}"
+        );
+    }
+
+    #[test]
+    fn cpp_cc_extension_is_recognised() {
+        let src = "int process(int n) {\n    int r = n * 2;\n    log(r);\n    return r;\n}\n";
+        let out = skeletonize(src, "proc.cc").expect("should skeletonize .cc");
+        assert!(out.contains("int process(int n)"));
+        assert!(!out.contains("n * 2"), "body elided: {out}");
+    }
+
+    // ── Perl ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn perl_keeps_sub_signature_drops_body() {
+        let src = "\
+use strict;
+use warnings;
+
+sub authenticate {
+    my ($user, $pass) = @_;
+    my $ok = verify($pass);
+    return $ok;
+}
+";
+        let out = skeletonize(src, "auth.pl").expect("should skeletonize");
+        assert!(out.contains("use strict;"));
+        assert!(out.contains("sub authenticate"));
+        assert!(!out.contains("verify($pass)"), "body elided: {out}");
+        assert!(
+            out.contains("tare:") && out.contains("lines hidden"),
+            "sentinel present: {out}"
+        );
+    }
+
+    #[test]
+    fn perl_pm_extension_is_recognised() {
+        let src = "sub compute {\n    my $x = shift;\n    my $y = $x * 2;\n    return $y;\n}\n";
+        let out = skeletonize(src, "Util.pm").expect("should skeletonize .pm");
+        assert!(out.contains("sub compute"));
+        assert!(!out.contains("$x * 2"), "body elided: {out}");
     }
 }
