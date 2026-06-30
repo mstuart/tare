@@ -35,6 +35,7 @@ pub mod json_crush;
 pub mod log_crush;
 pub mod lossy_compact;
 pub mod predicate;
+pub mod relevance;
 pub mod schema_slim;
 pub mod telegraphic;
 pub use predicate::narrow_tool_call;

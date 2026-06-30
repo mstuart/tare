@@ -46,6 +46,24 @@ impl Embedder for FastEmbedder {
     }
 }
 
+/// Batched embedding for semantic relevance ranking (`crate::relevance::Embedder`).
+///
+/// Uses fastembed's native batch API so all candidates are embedded in a single
+/// inference call.  This impl is only compiled when the `neural-embed` feature is
+/// enabled; the default build uses `StubEmbedder` from `crate::relevance` instead.
+impl crate::relevance::Embedder for FastEmbedder {
+    fn embed(&self, texts: &[&str]) -> Vec<Vec<f32>> {
+        if texts.is_empty() {
+            return Vec::new();
+        }
+        let mut guard = self.model.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.embed(texts.to_vec(), None) {
+            Ok(vecs) => vecs,
+            Err(_) => vec![vec![0.0f32; self.dim]; texts.len()],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
