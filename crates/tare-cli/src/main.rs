@@ -1,6 +1,10 @@
+mod admin;
+mod dashboard;
 mod doctor;
 mod learn;
+mod output_savings;
 mod perf;
+mod update;
 
 use clap::{Parser, Subcommand};
 use std::io::Read;
@@ -80,6 +84,30 @@ enum Command {
         /// Directory to read source/data files from.
         #[arg(long)]
         from: std::path::PathBuf,
+    },
+    /// Live savings dashboard: poll the proxy's /admin/stats and render a panel.
+    Dashboard {
+        /// Proxy port to poll (defaults to $TARE_PORT or 8787).
+        #[arg(long)]
+        port: Option<u16>,
+        /// Print a single snapshot and exit (for scripting).
+        #[arg(long, default_value_t = false)]
+        once: bool,
+        /// Refresh interval in milliseconds.
+        #[arg(long, default_value_t = 1000)]
+        interval_ms: u64,
+    },
+    /// Estimate output-token reduction from the proxy's A/B holdout (needs TARE_OUTPUT_HOLDOUT > 0).
+    OutputSavings {
+        /// Proxy port to poll (defaults to $TARE_PORT or 8787).
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Self-upgrade to the latest GitHub release. With --check, only report; make no changes.
+    Update {
+        /// Only check the latest version and report; do not modify anything.
+        #[arg(long, default_value_t = false)]
+        check: bool,
     },
 }
 
@@ -182,5 +210,30 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Command::Dashboard {
+            port,
+            once,
+            interval_ms,
+        } => {
+            dashboard::run(dashboard::DashboardOpts {
+                port: resolve_port(port),
+                once,
+                interval_ms,
+            });
+        }
+        Command::OutputSavings { port } => {
+            output_savings::run(output_savings::OutputSavingsOpts {
+                port: resolve_port(port),
+            });
+        }
+        Command::Update { check } => {
+            update::run(update::UpdateOpts { check });
+        }
     }
+}
+
+/// Resolve the proxy port from the flag, then `$TARE_PORT`, then the 8787 default.
+fn resolve_port(opt: Option<u16>) -> u16 {
+    opt.or_else(|| std::env::var("TARE_PORT").ok().and_then(|p| p.parse().ok()))
+        .unwrap_or(8787)
 }
