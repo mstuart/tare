@@ -29,7 +29,8 @@
 | `tare-cache` | provider cache models / hit-rate floors |
 | `tare-proxy` | the HTTP proxy + closed-loop controller + sensors |
 | `tare-cli` | the `tare` command |
-| `tare-mcp` | MCP stdio server: compression tools + a reversible `tare_expand` |
+| `tare-memory` | persistent cross-session memory: SQLite-backed remember/recall with content-hash dedup and multi-source provenance |
+| `tare-mcp` | MCP stdio server: compression tools + a reversible `tare_expand` + memory tools |
 | `tare-bench` | competitive benchmarks (not published) |
 
 ## The closed-loop controller
@@ -51,6 +52,22 @@ your cache discount survives.
 The default `compress` pipeline is **lossless** — every transform is reversible (columnar re-encode,
 dedup, cross-turn delta). Lossy levers (row-cap, field-truncate, telegraphic NL, AST skeletonization)
 are **opt-in**; the skeletonizer is reversible by re-reading the file.
+
+## Cross-agent memory
+
+`tare-memory` is a SQLite-backed store consumed by `tare-mcp`.  Four MCP tools expose it:
+
+| Tool | Required args | Optional args | Returns |
+|---|---|---|---|
+| `tare_remember` | `content` | `source` (default `"mcp"`) | `id` of stored (or deduped existing) memory |
+| `tare_recall` | `query` | `limit` (default 5) | matches ordered by term-hit score descending |
+| `tare_forget` | `id` (integer) | — | whether the row existed |
+| `tare_memory_stats` | — | — | total memory count + distinct source count |
+
+Dedup is content-hash based (xxh3-64): storing identical content from two different agents returns the same
+`id` and records both sources in the provenance table.  The store is **shared across all agents** that point
+at the same `tare-mcp` process, or independently that set `$TARE_MEMORY` to the same db path (default
+`~/.config/tare/memory.db`).
 
 ## Relevance modes
 

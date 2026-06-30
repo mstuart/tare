@@ -42,7 +42,8 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 - **Library** — call the `tare-core` engine directly from Rust.
 - **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap` — transforms, diagnostics, and ops.
 - **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` plus
-  a reversible **`tare_expand`** (retrieve any original by id) to any MCP client.
+  a reversible **`tare_expand`** (retrieve any original by id), and persistent cross-session memory
+  (`tare_remember` / `tare_recall` / `tare_forget` / `tare_memory_stats`) to any MCP client.
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
   it only drops information when you explicitly opt in.
 - **Cache-correct** — detects the provider's cache breakpoint and only compresses the dynamic suffix,
@@ -143,7 +144,10 @@ same block into any other MCP client (Cursor, Codex, …):
 `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) and restart.
 
 Tools: `tare_skeletonize`, `tare_compact_lossy`, `tare_compress`, a reversible `tare_expand` (retrieve any
-original by id), and `tare_stats` — JSON-RPC 2.0 over stdio (MCP protocol `2024-11-05`).
+original by id), `tare_stats`, and the cross-session memory tools `tare_remember` / `tare_recall` /
+`tare_forget` / `tare_memory_stats` — JSON-RPC 2.0 over stdio (MCP protocol `2024-11-05`). The memory
+store is shared across any agents pointed at the same `tare-mcp` process or the same `$TARE_MEMORY` db path
+(default `~/.config/tare/memory.db`).
 
 ## Wrap your agent
 
@@ -247,7 +251,8 @@ output — none of the others do all four.
 | `tare-cache` | provider cache models / hit-rate floors |
 | `tare-proxy` | the HTTP proxy + closed-loop controller + sensors |
 | `tare-cli` | the `tare` command |
-| `tare-mcp` | MCP (stdio) server: compression tools + a reversible `tare_expand` |
+| `tare-memory` | persistent cross-session memory: SQLite-backed remember/recall with content-hash dedup and multi-source provenance |
+| `tare-mcp` | MCP (stdio) server: compression tools + a reversible `tare_expand` + memory tools |
 | `tare-bench` | competitive benchmarks (not published) |
 
 ## Cargo features
