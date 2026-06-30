@@ -47,6 +47,42 @@ Reversible by re-reading. Supports rust/python/js/ts/go/java/c/c++/perl (by exte
 cat big.rs | tare skeletonize --path big.rs
 ```
 
+## `tare compact-html`
+
+Strip noisy presentational markup from an HTML page to reduce LLM context size. Opt-in lossy.
+
+Removes `<script>`, `<style>`, and `<svg>` blocks; HTML comments; and presentational attributes
+(`style`, `class`, `data-*`, `on*`). Collapses whitespace and drops empty lines. Text content and
+semantic tag structure are preserved. Passthrough if the input is not HTML-ish or the result would
+not be smaller.
+
+No flags. Reports byte counts and ratio to stderr.
+
+```bash
+curl -s https://example.com | tare compact-html
+# [tare] in=42800B out=9300B ratio=0.217
+```
+
+## `tare compact-csv`
+
+Row-compact a CSV or TSV file for LLM context. Opt-in lossy.
+
+Auto-detects the delimiter (comma or tab). Always keeps the header row and the first/last
+`--boundary` data rows (schema + recency). Also keeps anomalous rows (wrong column count or alert
+keywords). Drops the uniform bulk and replaces it with an explicit omission marker. Passthrough if
+the result would not be smaller.
+
+Reports byte counts and ratio to stderr.
+
+```bash
+cat big.csv | tare compact-csv --boundary 3 --max-rows 20
+# [tare] in=180000B out=4200B ratio=0.023
+```
+
+- `--boundary N` — head and tail data rows always kept (default `3`).
+- `--max-rows N` — cap on total kept data rows; `0` = uncapped (default `0`). Mandatory rows
+  (boundary + anomalies) are always kept regardless.
+
 ## `tare doctor`
 
 Health check: engine self-test (json_crush round-trip, code skeleton, tokenizer sanity), resolved

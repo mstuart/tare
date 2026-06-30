@@ -40,7 +40,7 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
 - **Proxy** — `tare-proxy`, point your agent's base URL at it; zero code changes, any language.
 - **Library** — call the `tare-core` engine directly from Rust.
-- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap` — transforms, diagnostics, and ops.
+- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | compact-html | compact-csv | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap` — transforms, diagnostics, and ops.
 - **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` plus
   a reversible **`tare_expand`** (retrieve any original by id), and persistent cross-session memory
   (`tare_remember` / `tare_recall` / `tare_forget` / `tare_memory_stats`) to any MCP client.
