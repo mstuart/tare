@@ -1,0 +1,42 @@
+name: crates-io
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish crates to crates.io
+        env:
+          TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${TOKEN:-}" ]; then
+            echo "skipping (no CARGO_REGISTRY_TOKEN)"
+            exit 0
+          fi
+          cargo publish -p tare-tokenize --no-verify --token "$TOKEN"
+          sleep 20
+          cargo publish -p tare-cache --no-verify --token "$TOKEN"
+          sleep 20
+          cargo publish -p tare-core --no-verify --token "$TOKEN"
+          sleep 20
+          cargo publish -p tare-memory --no-verify --token "$TOKEN"
+          sleep 20
+          cargo publish -p tare-cli --no-verify --token "$TOKEN"
+          sleep 20
+          cargo publish -p tare-proxy --no-verify --token "$TOKEN"
+          sleep 20
+          cargo publish -p tare-mcp --no-verify --token "$TOKEN"
