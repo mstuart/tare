@@ -39,7 +39,7 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
 - **Proxy** — `tare-proxy`, point your agent's base URL at it; zero code changes, any language.
 - **Library** — call the `tare-core` engine directly from Rust.
-- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn` for one-shot transforms and diagnostics.
+- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn | dashboard | output-savings | update` — transforms, diagnostics, and ops.
 - **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` plus
   a reversible **`tare_expand`** (retrieve any original by id) to any MCP client.
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
@@ -100,9 +100,12 @@ ps aux     | tare compact-lossy --max-rows 30 --max-field 110
 ```
 
 Proxy env: `TARE_UPSTREAM` (default `https://api.anthropic.com`), `TARE_PORT` (`8787`),
-`TARE_RECENCY` (`4`), `TARE_ENABLED` (`true`), `TARE_CONTEXT_LIMIT` (`200000`). Response headers report
-what it did: `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`, `x-tare-verbosity-spike`,
-`x-tare-halted`.
+`TARE_RECENCY` (`4`), `TARE_ENABLED` (`true`), `TARE_CONTEXT_LIMIT` (`200000`), `TARE_OUTPUT_HOLDOUT`
+(`0` — fraction of sessions that bypass compression so `output-savings` can A/B the output tokens).
+Response headers report what it did: `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`,
+`x-tare-verbosity-spike`, `x-tare-halted`. Admin surface: `GET /admin/stats` (cumulative-savings JSON)
+and `POST /admin/runtime-env` (hot-sync `TARE_ENABLED`/`TARE_RECENCY` live with no restart — send
+`Content-Type: application/json`).
 
 ## Use with your Claude subscription — MCP, no API key
 
@@ -222,6 +225,15 @@ tare perf --sample
 # and writes ~/.config/tare/profile.json.  The proxy auto-loads this file on startup.
 # (Not online RL: learn analyses static files and produces a persisted profile.)
 tare learn --from ./logs
+
+# Live savings dashboard (polls the proxy's /admin/stats); --once prints a single snapshot.
+tare dashboard
+
+# Estimate OUTPUT-token reduction via an A/B holdout (run the proxy with TARE_OUTPUT_HOLDOUT=0.1).
+tare output-savings
+
+# Self-upgrade to the latest GitHub release (--check only reports, never modifies).
+tare update --check
 ```
 
 ## Status & limitations

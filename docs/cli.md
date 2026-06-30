@@ -91,3 +91,43 @@ tare learn --from ./logs
 #   measured ratio     : 1.847x (lossless baseline)
 #   written to         : /Users/you/.config/tare/profile.json
 ```
+
+## `tare dashboard`
+
+Live savings panel that polls the proxy's `GET /admin/stats` and redraws every `--interval-ms`.
+
+- `--port N` — proxy port (defaults to `$TARE_PORT` or `8787`).
+- `--once` — print a single snapshot and exit (for scripting/CI).
+- `--interval-ms N` — refresh interval in milliseconds (default `1000`).
+
+```bash
+tare dashboard --once
+```
+
+## `tare output-savings`
+
+Estimates OUTPUT-token reduction by comparing the proxy's shaped vs. holdout A/B arms, with a 95%
+confidence interval. Requires the proxy to run with `TARE_OUTPUT_HOLDOUT > 0` (the fraction of sessions
+that bypass compression as a control arm).
+
+- `--port N` — proxy port (defaults to `$TARE_PORT` or `8787`).
+
+```bash
+TARE_OUTPUT_HOLDOUT=0.1 tare-proxy &      # 10% of sessions form the control arm
+tare output-savings
+# Output reduction: 31.7% (95% CI 27.7%..35.7%) [n_shaped=900, n_holdout=100]
+```
+
+## `tare update`
+
+Compares the running version against the latest GitHub release. With `--check` it only reports; without
+it, it detects the install method from the binary path (npm vs. the `curl` installer) and re-runs it.
+
+- `--check` — only report the latest version; make no changes.
+
+```bash
+tare update --check
+# current: v0.1.0
+# latest : v0.1.0
+# → already up to date.
+```
