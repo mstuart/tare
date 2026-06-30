@@ -2,16 +2,24 @@
   "name": "tare-ai",
   "version": "0.1.0",
   "description": "Lossless-by-default context compression for LLM coding agents — HTTP proxy, CLI, and MCP server.",
+  "main": "src/adapters.js",
+  "exports": {
+    ".": "./src/adapters.js",
+    "./adapters": "./src/adapters.js"
+  },
   "bin": {
     "tare": "bin/tare.js",
     "tare-proxy": "bin/tare-proxy.js",
     "tare-mcp": "bin/tare-mcp.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node install.js",
+    "test": "node test/adapters.test.js"
   },
   "files": [
     "bin/",
+    "src/",
+    "test/",
     "install.js",
     "README.md"
   ],
