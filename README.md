@@ -91,10 +91,14 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 # 1 — install (no Rust toolchain needed)
 curl -fsSL https://raw.githubusercontent.com/mstuart/tare/main/install.sh | sh   # → ~/.local/bin
 # or:  npm install -g tare-ai
+# or:  cargo install tare-cli                               # published to crates.io on each tagged release
+# or:  docker pull ghcr.io/mstuart/tare                    # published to GHCR on each tagged release
 # or:  git clone https://github.com/mstuart/tare && cd tare && cargo build --release
 
 # 2 — run as a proxy (point your agent's base URL at http://localhost:8787; zero code changes)
 TARE_UPSTREAM=https://api.anthropic.com tare-proxy
+# or via Docker:
+docker run --rm -e TARE_UPSTREAM=https://api.anthropic.com -p 8787:8787 ghcr.io/mstuart/tare
 
 # 3 — or use the CLI on any stdin
 cat big.rs | tare skeletonize --path big.rs    # drop fn bodies, keep structure
@@ -316,8 +320,9 @@ tare update --check
 
 ## Status & limitations
 
-- **v0.1.0** is tagged and published as a GitHub release; **not yet on crates.io** — build from source
-  or `cargo install --git` for now.
+- **v0.1.0** is tagged and published as a GitHub release. `cargo install tare-cli` (crates.io) and
+  `docker pull ghcr.io/mstuart/tare` (GHCR) are live on each tagged release; build from source or
+  `cargo install --git` to track HEAD between releases.
 - **Live-smoke-tested, not production-hardened** — one full round-trip through `tare-proxy` against the
   live Anthropic API on a Claude subscription (`scripts/live-smoke-sub.sh`), plus the MCP server driven
   over real stdio JSON-RPC, on top of 150+ unit, integration, and property tests against mock upstreams. Not yet load- or
