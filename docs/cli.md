@@ -131,3 +131,67 @@ tare update --check
 # latest : v0.1.0
 # → already up to date.
 ```
+
+## `tare wrap`
+
+Start `tare-proxy` and launch a coding agent through it in one step. For auto-launch agents the proxy
+starts in the background, the agent binary is exec'd with `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, and
+`OPENAI_API_BASE` set to point at the proxy, and the proxy is killed when the agent exits. For
+manual-setup agents (GUI / VS Code extensions) the command prints step-by-step instructions for
+pointing that tool's base-URL setting at the proxy — no binary is launched.
+
+Wrapping is ENV-based and ephemeral — no persistent global state is written.
+
+```bash
+tare wrap <agent> [--port N] [--print] [-- <agent-args>…]
+```
+
+- `<agent>` — one of: `claude`, `codex`, `aider`, `goose`, `openhands`, `opencode`, `openclaw`,
+  `vibe` (auto-launch); `cursor`, `cline`, `continue`, `cortex` (manual setup).
+- `--port N` — proxy port (defaults to `$TARE_PORT` or `8787`).
+- `--print` — dry-run: print what would run and exit without starting anything.
+- `-- <args>` — extra arguments forwarded verbatim to the agent binary (auto-launch only).
+
+**Agent matrix**
+
+| Agent | Mode |
+|---|---|
+| `claude` | auto-launch |
+| `codex` | auto-launch |
+| `aider` | auto-launch |
+| `goose` | auto-launch |
+| `openhands` | auto-launch |
+| `opencode` | auto-launch |
+| `openclaw` | auto-launch |
+| `vibe` | auto-launch |
+| `cursor` | manual setup |
+| `cline` | manual setup |
+| `continue` | manual setup |
+| `cortex` | manual setup |
+
+```bash
+tare wrap claude                          # start proxy + launch Claude Code
+tare wrap claude --print                  # dry-run: show what would happen
+tare wrap claude --port 9000              # custom proxy port
+tare wrap aider -- --model gpt-4o        # pass extra flags to the agent
+tare wrap cursor                          # print Cursor base-URL setup instructions
+```
+
+## `tare unwrap`
+
+Print a reminder that wrapping is ENV-based and ephemeral. If you configured a base-URL override
+directly in an agent's settings, `tare unwrap` tells you where to remove it.
+
+```bash
+tare unwrap <agent>
+```
+
+- `<agent>` — same set as `tare wrap`.
+
+```bash
+tare unwrap claude
+# Wrapping is ENV-based and ephemeral: `tare wrap` sets ANTHROPIC_BASE_URL,
+# OPENAI_BASE_URL, and OPENAI_API_BASE only for the duration of that invocation —
+# there is no persistent global state to remove.
+# If you configured a base-URL override directly in claude's settings, remove it there.
+```

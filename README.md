@@ -15,6 +15,7 @@
 <p align="center">
   <a href="#get-started-60-seconds">Install</a> ·
   <a href="#use-with-your-claude-subscription--mcp-no-api-key">Subscription</a> ·
+  <a href="#wrap-your-agent">Wrap</a> ·
   <a href="#how-it-works-30-seconds">How it works</a> ·
   <a href="#proof">Proof</a> ·
   <a href="#compared-to">Compared to</a> ·
@@ -39,7 +40,7 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
 - **Proxy** — `tare-proxy`, point your agent's base URL at it; zero code changes, any language.
 - **Library** — call the `tare-core` engine directly from Rust.
-- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn | dashboard | output-savings | update` — transforms, diagnostics, and ops.
+- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap` — transforms, diagnostics, and ops.
 - **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` plus
   a reversible **`tare_expand`** (retrieve any original by id) to any MCP client.
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
@@ -143,6 +144,44 @@ same block into any other MCP client (Cursor, Codex, …):
 
 Tools: `tare_skeletonize`, `tare_compact_lossy`, `tare_compress`, a reversible `tare_expand` (retrieve any
 original by id), and `tare_stats` — JSON-RPC 2.0 over stdio (MCP protocol `2024-11-05`).
+
+## Wrap your agent
+
+`tare wrap <agent>` starts the proxy and launches a supported CLI agent through it in one step,
+forwarding `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, and `OPENAI_API_BASE` to the agent process for
+the duration of that invocation. Wrapping is ENV-based and ephemeral — no global state is written.
+
+```bash
+tare wrap claude               # start proxy + launch Claude Code through it
+tare wrap claude -- --print    # pass extra flags to the agent (after --)
+tare wrap claude --print       # dry-run: show what would run without starting anything
+tare wrap claude --port 9000   # use a custom proxy port
+```
+
+**Supported agents**
+
+| Agent | Mode | Notes |
+|---|---|---|
+| `claude` | auto-launch | Claude Code CLI |
+| `codex` | auto-launch | OpenAI Codex CLI |
+| `aider` | auto-launch | aider CLI |
+| `goose` | auto-launch | Block's Goose |
+| `openhands` | auto-launch | OpenHands CLI |
+| `opencode` | auto-launch | opencode CLI |
+| `openclaw` | auto-launch | openclaw CLI |
+| `vibe` | auto-launch | Vibe CLI |
+| `cursor` | manual setup | prints base-URL instructions for Cursor's settings |
+| `cline` | manual setup | prints base-URL instructions for the Cline extension |
+| `continue` | manual setup | prints base-URL instructions for Continue extension |
+| `cortex` | manual setup | prints base-URL instructions for the Cortex library |
+
+Auto-launch agents: the proxy starts in the background, the agent binary is exec'd with the three
+env vars set, and the proxy is killed when the agent exits. Manual-setup agents: `tare wrap` prints
+step-by-step instructions for pointing that tool's base-URL setting at the proxy — no binary is
+launched.
+
+`tare unwrap <agent>` prints a reminder that wrapping is ephemeral and points to where to remove
+any base-URL override if it was configured directly in the agent's settings.
 
 ## Proof
 
