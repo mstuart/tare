@@ -7,6 +7,14 @@ git clone https://github.com/mstuart/tare && cd tare
 cargo build --release          # builds target/release/{tare, tare-proxy}
 ```
 
+The default build uses **keyword/symbol-based relevance** and has no external model dependency.
+To enable **neural semantic relevance** (exact cosine ranking via fastembed — downloads an
+embedding model on first use):
+
+```bash
+cargo build --release --features neural-embed
+```
+
 Or with Docker:
 
 ```bash

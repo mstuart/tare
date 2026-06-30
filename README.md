@@ -2,7 +2,7 @@
   <img src="docs/assets/logo.svg" alt="tare — lossless context compression for LLM coding agents" width="720">
 </div>
 
-<p align="center"><strong>lossless by default · relevance-aware · cache-correct · closed-loop · proxy · library · CLI · MCP · local</strong></p>
+<p align="center"><strong>lossless by default · keyword-relevance (neural opt-in) · cache-correct · closed-loop · proxy · library · CLI · MCP · local</strong></p>
 
 <p align="center">
   <a href="https://github.com/mstuart/tare/actions/workflows/ci.yml"><img src="https://github.com/mstuart/tare/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -72,7 +72,7 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
   │  cache-boundary detect → only touch the dynamic suffix    │
   │  lossless passes:  supersession · IVM/delta · dedup ·     │
   │                    columnar JSON/log · schema-slim ·      │
-  │                    query-relevance                        │
+  │                    query-relevance (keyword)              │
   │  opt-in lossy:     row-cap · field-truncate · telegraphic │
   │                    · AST code skeletonization             │
   │  closed-loop controller:  cache-hit-rate (halt) ·         │
@@ -249,6 +249,20 @@ output — none of the others do all four.
 | `tare-cli` | the `tare` command |
 | `tare-mcp` | MCP (stdio) server: compression tools + a reversible `tare_expand` |
 | `tare-bench` | competitive benchmarks (not published) |
+
+## Cargo features
+
+| Feature | Default | Description |
+|---|:-:|---|
+| `neural-embed` | off | Semantic relevance via [fastembed](https://github.com/Anyscale/fastembed-rs). Replaces the default keyword/symbol relevance pass with **exact cosine ranking** over neural embeddings — no HNSW index, no approximate search. Downloads an embedding model on first use. |
+
+The default build uses **keyword/symbol matching** for query-relevance pruning and has no external model dependency. Enable semantic relevance with:
+
+```bash
+cargo build --release --features neural-embed   # downloads an embedding model on first use
+```
+
+> Exact cosine is used (not HNSW or any approximate index) because at relevance-pass scale — a handful of candidate segments per turn — exact ranking is faster and strictly more accurate than approximate nearest-neighbour.
 
 ## Diagnostics & tuning
 

@@ -9,7 +9,7 @@
   │  cache-boundary detect → only touch the dynamic suffix    │
   │  lossless passes:  supersession · IVM/delta · dedup ·     │
   │                    columnar JSON/log · schema-slim ·      │
-  │                    query-relevance                        │
+  │                    query-relevance (keyword)              │
   │  opt-in lossy:     row-cap · field-truncate · telegraphic │
   │                    · AST code skeletonization             │
   │  closed-loop controller:  cache-hit-rate (halt) ·         │
@@ -51,3 +51,16 @@ your cache discount survives.
 The default `compress` pipeline is **lossless** — every transform is reversible (columnar re-encode,
 dedup, cross-turn delta). Lossy levers (row-cap, field-truncate, telegraphic NL, AST skeletonization)
 are **opt-in**; the skeletonizer is reversible by re-reading the file.
+
+## Relevance modes
+
+The **query-relevance** lossless pass keeps tool outputs and file reads that match the current task
+query and drops lower-priority content. Two modes are available:
+
+- **Keyword/symbol matching** (default) — no model download, no external dependency. This is what
+  `cargo build --release` produces.
+- **Neural semantic relevance** (opt-in) — exact cosine ranking over neural embeddings via
+  [fastembed](https://github.com/Anyscale/fastembed-rs); enabled by building with the
+  `neural-embed` cargo feature (`cargo build --release --features neural-embed`). Downloads an
+  embedding model on first use. No HNSW or approximate index is used — exact cosine over the
+  candidate segment set is fast enough at relevance-pass scale and is strictly more accurate.
