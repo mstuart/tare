@@ -1,0 +1,21 @@
+[package]
+name = "tare-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Python bindings for tare — query-aware LLM context compression."
+publish = false
+
+[lib]
+name = "tare"
+crate-type = ["cdylib"]
+
+[dependencies]
+tare-core = { path = "../tare-core", version = "0.1.0" }
+tare-cli = { path = "../tare-cli", version = "0.1.0" }
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+serde_json = "1"
