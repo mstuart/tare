@@ -83,6 +83,29 @@ cat big.csv | tare compact-csv --boundary 3 --max-rows 20
 - `--max-rows N` — cap on total kept data rows; `0` = uncapped (default `0`). Mandatory rows
   (boundary + anomalies) are always kept regardless.
 
+## `tare deref-images`
+
+Replace inline base64 image data-URIs with compact `[tare-image id=… fmt=… ~NKB]` markers. Opt-in
+lossy. Passthrough if no base64 image URIs are detected.
+
+Each marker encodes the format (`fmt`, e.g. `png`, `jpeg`, `webp`) and an approximate decoded size
+(`~NKB`). Screenshots and embedded images in LLM context can run to tens of thousands of tokens; this
+transform strips the payload while leaving the model enough context to reason about what was there.
+
+**One-way on the CLI.** The CLI does not store originals — the output cannot be reversed. When
+reversibility matters, use the MCP tool `tare_deref_images` instead: it stores each original keyed by
+its 8-character id so `tare_expand id=<id>` can retrieve the full data-URI for the duration of the
+MCP session.
+
+No flags.
+
+```bash
+cat page.html | tare deref-images
+# [tare] in=142000B out=1800B images=3 ratio=0.013
+```
+
+Reports byte counts, image count, and ratio to stderr.
+
 ## `tare doctor`
 
 Health check: engine self-test (json_crush round-trip, code skeleton, tokenizer sanity), resolved

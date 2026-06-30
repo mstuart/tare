@@ -40,10 +40,10 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 
 - **Proxy** — `tare-proxy`, point your agent's base URL at it; zero code changes, any language.
 - **Library** — call the `tare-core` engine directly from Rust.
-- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | compact-html | compact-csv | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap` — transforms, diagnostics, and ops.
-- **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` plus
-  a reversible **`tare_expand`** (retrieve any original by id), and persistent cross-session memory
-  (`tare_remember` / `tare_recall` / `tare_forget` / `tare_memory_stats`) to any MCP client.
+- **CLI** — `tare compress | slim-schema | compact-lossy | skeletonize | compact-html | compact-csv | deref-images | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap` — transforms, diagnostics, and ops.
+- **MCP server** — `tare-mcp` exposes `tare_skeletonize` / `tare_compact_lossy` / `tare_compress` /
+  `tare_deref_images` plus a reversible **`tare_expand`** (retrieve any original by id), and persistent
+  cross-session memory (`tare_remember` / `tare_recall` / `tare_forget` / `tare_memory_stats`) to any MCP client.
 - **Lossless by default** — re-encodes tool output, logs, and JSON into a denser *equivalent* form;
   it only drops information when you explicitly opt in.
 - **Cache-correct** — detects the provider's cache breakpoint and only compresses the dynamic suffix,
@@ -143,11 +143,12 @@ same block into any other MCP client (Cursor, Codex, …):
 **Claude Desktop:** add that same `mcpServers` block to
 `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) and restart.
 
-Tools: `tare_skeletonize`, `tare_compact_lossy`, `tare_compress`, a reversible `tare_expand` (retrieve any
-original by id), `tare_stats`, and the cross-session memory tools `tare_remember` / `tare_recall` /
-`tare_forget` / `tare_memory_stats` — JSON-RPC 2.0 over stdio (MCP protocol `2024-11-05`). The memory
-store is shared across any agents pointed at the same `tare-mcp` process or the same `$TARE_MEMORY` db path
-(default `~/.config/tare/memory.db`).
+Tools: `tare_skeletonize`, `tare_compact_lossy`, `tare_compress`, `tare_deref_images` (replace inline
+base64 images with compact `[tare-image id=… fmt=… ~NKB]` markers; originals retrievable via
+`tare_expand`), a reversible `tare_expand` (retrieve any original by id), `tare_stats`, and the
+cross-session memory tools `tare_remember` / `tare_recall` / `tare_forget` / `tare_memory_stats` —
+JSON-RPC 2.0 over stdio (MCP protocol `2024-11-05`). The memory store is shared across any agents pointed
+at the same `tare-mcp` process or the same `$TARE_MEMORY` db path (default `~/.config/tare/memory.db`).
 
 ## Wrap your agent
 
@@ -308,6 +309,17 @@ tare update --check
   over-estimates true fill (conservative — errs toward compressing sooner).
 - A `>2 MB` *streaming* response whose final usage event straddles the 64 KB tail buffer may skip one
   verbosity sample (non-fatal).
+
+**Non-goals (intentional scope, not gaps)**
+
+- **Trained ML text-compressor.** tare does not ship Headroom's trained ML text-compressor and has no
+  plans to. There is no training infrastructure, and on the included harness (`crates/tare-bench/`) tare's
+  lossless engine already matches or beats LLMLingua-2 at equal fidelity. Shipping model weights would add
+  download overhead, inference latency, and a non-trivial failure mode for no measurable improvement on the
+  targets tare is built for.
+- **Voice/audio compression.** tare is a text-context tool — it operates on text entering the context
+  window. Audio is deliberately out of scope. Transcribe externally (Whisper, Deepgram, etc.) and feed the
+  transcript through `tare compress`; that is the intended path.
 
 ## Contributing
 
