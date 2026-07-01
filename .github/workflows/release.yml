@@ -55,6 +55,11 @@ jobs:
         shell: bash
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
+          # Create the release on first contact (concurrent matrix jobs race; losers fall
+          # through to the upload, which fails loudly if the release truly doesn't exist).
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "tare $tag" \
+                 --verify-tag --generate-notes || true
           gh release upload "$tag" \
             "${{ steps.package.outputs.asset }}" \
             "${{ steps.package.outputs.asset }}.sha256" \
