@@ -21,6 +21,9 @@ CI runs exactly those four checks — please make sure they pass locally before 
 - `tare-cache` — provider cache models
 - `tare-proxy` — the HTTP proxy + closed-loop controller
 - `tare-cli` — the `tare` binary
+- `tare-mcp` — the stdio MCP server (compression + memory tools)
+- `tare-memory` — persistent cross-session memory (SQLite)
+- `tare-py` — Python bindings (PyPI: `tare-compress`)
 - `tare-bench` — competitive benchmarks (not published)
 
 ## Notes

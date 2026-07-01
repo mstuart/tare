@@ -38,9 +38,11 @@ It speaks Anthropic (`/v1/messages`) and OpenAI (`/v1/chat/completions`).
 | `TARE_RECENCY` | `4` | tool outputs always kept regardless of relevance |
 | `TARE_ENABLED` | `true` | set `0`/`false` for byte-exact passthrough |
 | `TARE_CONTEXT_LIMIT` | `200000` | model context window (drives the fill-based aggression dial) |
+| `TARE_OUTPUT_HOLDOUT` | `0` | fraction of sessions that bypass compression (A/B baseline for `tare output-savings`) |
+| `TARE_LOG` | unset | set it to log one line per turn with the compression report |
 
-Response headers report what it did: `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`,
-`x-tare-verbosity-spike`, `x-tare-halted`.
+Response headers report what it did: `x-tare-input-tokens`, `x-tare-net-tokens`, `x-tare-dropped`,
+`x-tare-aggression`, `x-tare-verbosity-spike`, `x-tare-halted`.
 
 ## As a CLI
 
@@ -55,9 +57,11 @@ See the [CLI reference](cli.md) for all subcommands.
 ## As an MCP server
 
 `tare-mcp` is a stdio MCP server. Point any MCP client at the `tare-mcp` binary; it exposes
-`tare_skeletonize`, `tare_compact_lossy`, `tare_compress`, `tare_stats`, and a reversible
-**`tare_expand`** — when a tool compacts something it returns an `id`, and `tare_expand({id})` returns
-the exact original (CCR-style retrieval), so the agent can drill back in on demand.
+`tare_skeletonize`, `tare_compact_lossy`, `tare_compress`, `tare_deref_images`, `tare_stats`, and a
+reversible **`tare_expand`** — when a tool compacts something it returns an `id`, and
+`tare_expand({id})` returns the exact original (CCR-style retrieval), so the agent can drill back in
+on demand — plus persistent cross-session memory: `tare_remember`, `tare_recall`, `tare_forget`,
+`tare_memory_stats`.
 
 ```jsonc
 // example MCP client config

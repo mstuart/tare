@@ -2,7 +2,8 @@
 
 > Lossless-by-default, cache-correct, closed-loop context compression for LLM coding agents. A Rust
 > workspace providing a library (`tare-core`), an HTTP proxy (`tare-proxy`) that speaks the Anthropic
-> and OpenAI APIs, and a CLI (`tare`).
+> and OpenAI APIs, a CLI (`tare`), an MCP server (`tare-mcp`), Python bindings (PyPI:
+> `tare-compress`), and an npm distribution (`tare-ai`).
 
 tare compresses an agent's context window before it reaches the model. It is **lossless by default**
 (columnar JSON/log re-encode, exact/envelope dedup, cross-turn IVM delta, supersession, schema-slim,
@@ -16,7 +17,14 @@ back off), and context-fill (compress harder).
 
 - Proxy: `tare-proxy` — env `TARE_UPSTREAM`, `TARE_PORT` (8787), `TARE_CONTEXT_LIMIT` (200000);
   endpoints `/v1/messages` (Anthropic) and `/v1/chat/completions` (OpenAI).
-- CLI: `tare compress | slim-schema | compact-lossy | skeletonize`.
+- CLI: `tare compress | slim-schema | compact-lossy | skeletonize | compact-html | compact-csv |
+  deref-images | doctor | perf | learn | dashboard | output-savings | update | wrap | unwrap`.
+- MCP: `tare-mcp` (stdio) — `tare_compress`, `tare_skeletonize`, `tare_compact_lossy`,
+  `tare_deref_images`, reversible `tare_expand`, `tare_stats`, and cross-session memory
+  (`tare_remember` / `tare_recall` / `tare_forget` / `tare_memory_stats`).
+- Python: `pip install tare-compress` → `import tare` (all core transforms +
+  `tare.integrations` framework adapters).
+- JS/TS: `npm install tare-ai` → `withTare`, `tareMiddleware`, `startProxy` (+ prebuilt binaries).
 
 ## Docs
 
@@ -25,6 +33,7 @@ back off), and context-fill (compress harder).
 
 ## Key facts
 
-- AST code skeletonization: ~65% token reduction on real source files (code reads are the dominant sink).
+- AST code skeletonization: 59–73% token reduction on the committed proof corpus (code reads are the
+  dominant sink). Languages: rust, python, js, ts, go, java, c, c++, perl.
 - Lossless by default; cache-prefix-boundary aware; bounded body buffering + upstream timeouts.
-- MIT licensed. MSRV 1.82. Languages for the skeletonizer: rust, python, js, ts, go.
+- MIT licensed. MSRV 1.82.

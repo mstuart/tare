@@ -7,9 +7,8 @@
 <p align="center">
   <a href="https://github.com/mstuart/tare/actions/workflows/ci.yml"><img src="https://github.com/mstuart/tare/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://mstuart.github.io/tare/"><img src="https://img.shields.io/badge/docs-online-blue.svg" alt="Docs"></a>
+  <a href="https://www.npmjs.com/package/tare-ai"><img src="https://img.shields.io/npm/v/tare-ai?label=npm" alt="npm"></a>
   <img src="https://img.shields.io/badge/rust-1.82%2B-orange.svg" alt="Rust 1.82+">
-  <img src="https://img.shields.io/badge/status-pre--1.0-yellow.svg" alt="pre-1.0">
 </p>
 
 <p align="center">
@@ -29,12 +28,6 @@ tare sits between an agent and the model API and shrinks the context window. Unl
 it is **lossless by default**, **cache-correct** (it never rewrites the provider's cached prefix), and
 **closed-loop** — it watches the model's *output* and adapts. Opt in and it compresses aggressively:
 row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
-
-> **Status: pre-1.0.** The engine is well-tested (150+ tests) and, on the included harness
-> (`crates/tare-bench/`), at equal fidelity matches or beats each competitor — reproduce with the
-> scripts there. It has been smoke-tested end-to-end against the live Anthropic API — through the proxy
-> on a Claude subscription and via the MCP server — but it is not yet production-hardened. Read
-> [Status & limitations](#status--limitations) before deploying.
 
 ## What it does
 
@@ -91,7 +84,7 @@ row-capping, field-truncation, telegraphic NL, and AST code skeletonization.
 # 1 — install (no Rust toolchain needed)
 curl -fsSL https://raw.githubusercontent.com/mstuart/tare/main/install.sh | sh   # → ~/.local/bin
 # or:  npm install -g tare-ai
-# or:  cargo install tare-cli                               # published to crates.io on each tagged release
+# or:  cargo install tare-cli                               # on crates.io from v0.2.0
 # or:  docker pull ghcr.io/mstuart/tare                    # published to GHCR on each tagged release
 # or:  git clone https://github.com/mstuart/tare && cd tare && cargo build --release
 
@@ -107,16 +100,17 @@ ps aux     | tare compact-lossy --max-rows 30 --max-field 110
 
 Proxy env: `TARE_UPSTREAM` (default `https://api.anthropic.com`), `TARE_PORT` (`8787`),
 `TARE_RECENCY` (`4`), `TARE_ENABLED` (`true`), `TARE_CONTEXT_LIMIT` (`200000`), `TARE_OUTPUT_HOLDOUT`
-(`0` — fraction of sessions that bypass compression so `output-savings` can A/B the output tokens).
-Response headers report what it did: `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`,
-`x-tare-verbosity-spike`, `x-tare-halted`. Admin surface: `GET /admin/stats` (cumulative-savings JSON)
-and `POST /admin/runtime-env` (hot-sync `TARE_ENABLED`/`TARE_RECENCY` live with no restart — send
-`Content-Type: application/json`).
+(`0` — fraction of sessions that bypass compression so `output-savings` can A/B the output tokens),
+`TARE_LOG` (unset — set it to log one line per turn with the compression report).
+Response headers report what it did: `x-tare-input-tokens`, `x-tare-net-tokens`, `x-tare-dropped`,
+`x-tare-aggression`, `x-tare-verbosity-spike`, `x-tare-halted`. Admin surface: `GET /admin/stats`
+(cumulative-savings JSON) and `POST /admin/runtime-env` (hot-sync `TARE_ENABLED`/`TARE_RECENCY` live
+with no restart — send `Content-Type: application/json`).
 
 ### Python
 
 ```bash
-pip install tare-compress
+pip install tare-compress          # on PyPI from v0.2.0
 ```
 
 ```python
@@ -378,15 +372,24 @@ tare update --check
 
 ## Status & limitations
 
-- **v0.1.0** is tagged and published as a GitHub release. `cargo install tare-cli` (crates.io) and
-  `docker pull ghcr.io/mstuart/tare` (GHCR) are live on each tagged release; build from source or
-  `cargo install --git` to track HEAD between releases.
-- **Live-smoke-tested, not production-hardened** — one full round-trip through `tare-proxy` against the
-  live Anthropic API on a Claude subscription (`scripts/live-smoke-sub.sh`), plus the MCP server driven
-  over real stdio JSON-RPC, on top of 150+ unit, integration, and property tests against mock upstreams. Not yet load- or
-  hostile-input-tested in production.
-- Startup failures (HTTP client build, port bind, serve) exit with a clear `[tare-proxy] fatal: …`
-  message and a non-zero status rather than a panic backtrace.
+- **Installable today** — the [binary installer](#get-started-60-seconds), `npm install -g tare-ai`,
+  and `docker pull ghcr.io/mstuart/tare` are live; every tagged release ships checksummed binaries
+  for macOS (arm64 / x86_64) and Linux (x86_64). crates.io (`cargo install tare-cli`) and PyPI
+  (`pip install tare-compress`) publish from v0.2.0. Build from source or `cargo install --git` to
+  track HEAD between releases.
+- **Tested** — 228 unit, integration, and property tests across 22 suites; `cargo fmt --check`,
+  `clippy -D warnings`, and `cargo deny` (advisories · licenses · bans) gate every commit in CI.
+  Verified end-to-end against the live Anthropic API: a full round-trip through `tare-proxy` on a
+  Claude subscription (`scripts/live-smoke-sub.sh`), plus the MCP server driven over real stdio
+  JSON-RPC.
+- **Deploy it as a local sidecar** — tare runs next to your agent and forwards your credentials
+  upstream without logging or persisting them; treat it as a trusted component on your own machine
+  or network rather than shared multi-tenant infrastructure ([SECURITY.md](SECURITY.md)). Startup
+  failures (HTTP client build, port bind, serve) exit with a clear `[tare-proxy] fatal: …` message
+  and a non-zero status, never a panic backtrace.
+
+**Known edges**
+
 - The context-fill signal counts the serialized request (incl. JSON envelope), so it slightly
   over-estimates true fill (conservative — errs toward compressing sooner).
 - A `>2 MB` *streaming* response whose final usage event straddles the 64 KB tail buffer may skip one
