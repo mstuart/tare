@@ -17,9 +17,9 @@ name = "tare-proxy"
 path = "src/main.rs"
 
 [dependencies]
-tare-cache = { path = "../tare-cache", version = "0.1.0" }
-tare-core = { path = "../tare-core", version = "0.1.0" }
-tare-tokenize = { path = "../tare-tokenize", version = "0.1.0" }
+tare-cache = { path = "../tare-cache", version = "0.2.0" }
+tare-core = { path = "../tare-core", version = "0.2.0" }
+tare-tokenize = { path = "../tare-tokenize", version = "0.2.0" }
 serde = { workspace = true }
 serde_json = "1"
 axum = "0.8"

@@ -1,6 +1,6 @@
 {
   "name": "tare-ai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lossless-by-default context compression for LLM coding agents — HTTP proxy, CLI, and MCP server.",
   "main": "src/adapters.js",
   "exports": {

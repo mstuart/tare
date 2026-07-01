@@ -15,7 +15,7 @@ name = "_tare"
 crate-type = ["cdylib"]
 
 [dependencies]
-tare-core = { path = "../tare-core", version = "0.1.0" }
-tare-cli = { path = "../tare-cli", version = "0.1.0" }
+tare-core = { path = "../tare-core", version = "0.2.0" }
+tare-cli = { path = "../tare-cli", version = "0.2.0" }
 pyo3 = { version = "0.29", features = ["extension-module", "abi3-py39"] }
 serde_json = "1"
