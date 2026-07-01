@@ -14,6 +14,7 @@ use tare_cli::run_compress_with_budget;
 #[derive(Parser)]
 #[command(
     name = "tare",
+    version,
     about = "Query-aware, cache-correct, lossless context compression"
 )]
 struct Cli {
