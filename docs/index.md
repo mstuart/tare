@@ -17,5 +17,5 @@ Use it three ways: as an HTTP **proxy** (zero code changes), as a Rust **library
 → [Getting started](getting-started.md) · [Architecture](architecture.md) · [Benchmarks](benchmarks.md)
 
 !!! note "Status"
-    Pre-1.0. Well-tested (160 tests), benchmarked, and smoke-tested against the live Anthropic API on a
-    Claude subscription — but not yet production-hardened. See the README's Status section before deploying.
+    v0.2.0 released — binary installer, npm, and Docker/GHCR are live. 228 tests, benchmarked, and
+    verified end-to-end against the live Anthropic API. See the README's Status & limitations.

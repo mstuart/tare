@@ -31,6 +31,7 @@
 | `tare-cli` | the `tare` command |
 | `tare-memory` | persistent cross-session memory: SQLite-backed remember/recall with content-hash dedup and multi-source provenance |
 | `tare-mcp` | MCP stdio server: compression tools + a reversible `tare_expand` + memory tools |
+| `tare-py` | Python bindings (PyPI: `tare-compress`): abi3 wheel exposing all core transforms |
 | `tare-bench` | competitive benchmarks (not published) |
 
 ## The closed-loop controller

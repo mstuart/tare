@@ -22,6 +22,7 @@ nav:
   - Getting started: getting-started.md
   - Architecture: architecture.md
   - CLI reference: cli.md
+  - Integrations: integrations.md
   - Benchmarks: benchmarks.md
 
 markdown_extensions:
