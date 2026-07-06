@@ -13,5 +13,5 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 xxhash-rust = { workspace = true }
