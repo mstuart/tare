@@ -14,7 +14,13 @@
   },
   "scripts": {
     "postinstall": "node install.js",
-    "test": "node test/adapters.test.js"
+    "test": "node test/adapters.test.js",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.6",
+    "ultracite": "7.10.2"
   },
   "files": [
     "bin/",
