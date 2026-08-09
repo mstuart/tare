@@ -9,6 +9,8 @@
   <a href="https://www.npmjs.com/package/tare-ai"><img src="https://img.shields.io/npm/v/tare-ai?label=npm" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/rust-1.82%2B-orange.svg" alt="Rust 1.82+">
+  <a href="https://deepwiki.com/mstuart/tare"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+  <a href="https://socket.dev/npm/package/tare-ai"><img src="https://socket.dev/api/badge/npm/package/tare-ai" alt="Socket"></a>
 </p>
 
 <p align="center">
