@@ -2,44 +2,6 @@
   "name": "tare-ai",
   "version": "0.2.0",
   "description": "Lossless-by-default context compression for LLM coding agents — HTTP proxy, CLI, and MCP server.",
-  "main": "src/adapters.js",
-  "exports": {
-    ".": "./src/adapters.js",
-    "./adapters": "./src/adapters.js"
-  },
-  "bin": {
-    "tare": "bin/tare.js",
-    "tare-proxy": "bin/tare-proxy.js",
-    "tare-mcp": "bin/tare-mcp.js"
-  },
-  "scripts": {
-    "postinstall": "node install.js",
-    "test": "node test/adapters.test.js",
-    "check": "ultracite check",
-    "fix": "ultracite fix"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.5.6",
-    "ultracite": "7.10.2"
-  },
-  "files": [
-    "bin/",
-    "src/",
-    "test/",
-    "install.js",
-    "README.md"
-  ],
-  "engines": {
-    "node": ">=18"
-  },
-  "os": [
-    "darwin",
-    "linux"
-  ],
-  "cpu": [
-    "arm64",
-    "x64"
-  ],
   "keywords": [
     "llm",
     "context",
@@ -50,10 +12,48 @@
     "tokens",
     "agent"
   ],
+  "homepage": "https://github.com/mstuart/tare",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mstuart/tare.git"
   },
-  "homepage": "https://github.com/mstuart/tare",
-  "license": "MIT"
+  "license": "MIT",
+  "exports": {
+    ".": "./src/adapters.js",
+    "./adapters": "./src/adapters.js"
+  },
+  "main": "src/adapters.js",
+  "bin": {
+    "tare": "bin/tare.js",
+    "tare-mcp": "bin/tare-mcp.js",
+    "tare-proxy": "bin/tare-proxy.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "test/",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "postinstall": "node install.js",
+    "test": "node test/adapters.test.js"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.6",
+    "ultracite": "7.10.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ]
 }
