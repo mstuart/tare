@@ -15,15 +15,26 @@ async fn upstream_handler(State(rec): State<Recorder>, body: Bytes) -> &'static 
     "{\"ok\":true}"
 }
 
-async fn spawn(router: Router) -> u16 {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .unwrap();
+async fn spawn(router: Router) -> std::io::Result<u16> {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
-    port
+    Ok(port)
+}
+
+macro_rules! spawn_or_skip {
+    ($router:expr) => {
+        match spawn($router).await {
+            Ok(port) => port,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping TCP integration test: {error}");
+                return;
+            }
+            Err(error) => panic!("failed to bind integration-test listener: {error}"),
+        }
+    };
 }
 
 /// Construct a ProxyState with zero-initialized observability counters and no sessions.
@@ -62,7 +73,7 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
     let upstream = Router::new()
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
 
     // 2. tare proxy -> mock upstream
     let state = make_state(
@@ -73,7 +84,7 @@ async fn proxy_compresses_then_forwards_and_returns_upstream_response() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
 
     // give the servers a tick to be ready
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -125,7 +136,7 @@ async fn openai_proxy_compresses_then_forwards_and_returns_upstream_response() {
     let upstream = Router::new()
         .route("/v1/chat/completions", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
 
     // 2. tare proxy -> mock upstream
     let state = make_state(
@@ -136,7 +147,7 @@ async fn openai_proxy_compresses_then_forwards_and_returns_upstream_response() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // 3. compressible OpenAI request: irrelevant grep result (different class to jwt read, so
@@ -190,7 +201,7 @@ async fn proxy_response_carries_tare_report_headers() {
     let upstream = Router::new()
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
 
     // 2. tare proxy -> mock upstream
     let state = make_state(
@@ -201,7 +212,7 @@ async fn proxy_response_carries_tare_report_headers() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // 3. compressible request with tool results
@@ -257,7 +268,7 @@ async fn halts_compression_after_three_low_hit_rate_turns() {
     let upstream = Router::new()
         .route("/v1/messages", post(up))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
 
     let state = make_state(
         format!("http://127.0.0.1:{up_port}"),
@@ -267,7 +278,7 @@ async fn halts_compression_after_three_low_hit_rate_turns() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let req = serde_json::json!({
@@ -317,7 +328,7 @@ async fn skeletonizes_code_via_controller_under_high_fill() {
     let upstream = Router::new()
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
     let state = make_state(
         format!("http://127.0.0.1:{up_port}"),
         CompressOpts {
@@ -326,7 +337,7 @@ async fn skeletonizes_code_via_controller_under_high_fill() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // ~110k approx tokens of code (>0.5 of the 200k window) -> controller level 2.
@@ -401,7 +412,7 @@ async fn verbosity_spike_backs_off_compression_end_to_end() {
     let upstream = Router::new()
         .route("/v1/chat/completions", post(up))
         .with_state((rec.clone(), cnt.clone()));
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
     let state = make_state(
         format!("http://127.0.0.1:{up_port}"),
         CompressOpts {
@@ -410,7 +421,7 @@ async fn verbosity_spike_backs_off_compression_end_to_end() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // grep (irrelevant) + a different-tool read (relevant anchor) so supersession doesn't fire and
@@ -470,7 +481,7 @@ async fn count_tokens_exact_parses_input_tokens_and_falls_back() {
         "{\"input_tokens\":1234}"
     }
     let upstream = Router::new().route("/v1/messages/count_tokens", post(counter));
-    let port = spawn(upstream).await;
+    let port = spawn_or_skip!(upstream);
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let base = format!("http://127.0.0.1:{port}");
     let client = reqwest::Client::new();
@@ -512,7 +523,7 @@ async fn admin_stats_returns_correct_shape_and_counts_requests() {
     let upstream = Router::new()
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
     let state = make_state(
         format!("http://127.0.0.1:{up_port}"),
         CompressOpts {
@@ -521,7 +532,7 @@ async fn admin_stats_returns_correct_shape_and_counts_requests() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let req = serde_json::json!({
@@ -641,7 +652,7 @@ async fn admin_runtime_env_disables_and_reenables_compression() {
     let upstream = Router::new()
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
     let state = make_state(
         format!("http://127.0.0.1:{up_port}"),
         CompressOpts {
@@ -650,7 +661,7 @@ async fn admin_runtime_env_disables_and_reenables_compression() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let client = reqwest::Client::new();
@@ -753,7 +764,7 @@ async fn admin_runtime_env_updates_recency_keep() {
     let upstream = Router::new()
         .route("/v1/messages", post(upstream_handler))
         .with_state(rec.clone());
-    let up_port = spawn(upstream).await;
+    let up_port = spawn_or_skip!(upstream);
     let state = make_state(
         format!("http://127.0.0.1:{up_port}"),
         CompressOpts {
@@ -762,7 +773,7 @@ async fn admin_runtime_env_updates_recency_keep() {
             min_savings: 0,
         },
     );
-    let proxy_port = spawn(app(state)).await;
+    let proxy_port = spawn_or_skip!(app(state));
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let client = reqwest::Client::new();

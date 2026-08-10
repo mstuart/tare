@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-"use strict";
-const { spawnSync } = require("child_process");
-const path = require("path");
-const bin = path.join(__dirname, "..", "vendor", "tare" + (process.platform === "win32" ? ".exe" : ""));
+
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
+const bin = path.join(
+  path.dirname(require.resolve("../package.json")),
+  "vendor",
+  `tare${process.platform === "win32" ? ".exe" : ""}`
+);
 const r = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
 if (r.error) {
   console.error(
     r.error.code === "ENOENT"
       ? "[tare] binary missing — reinstall: npm install -g @mstuart/tare"
-      : "[tare] " + r.error.message
+      : `[tare] ${r.error.message}`
   );
   process.exit(1);
 }
