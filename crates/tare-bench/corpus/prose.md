@@ -370,7 +370,7 @@ tare update --check
 
 ## Status & limitations
 
-- **v0.1.0** is tagged and published as a GitHub release. `cargo install tare-cli` (crates.io) and
+- **v0.2.0** is tagged and published as a GitHub release. `cargo install tare-cli` (crates.io) and
   `docker pull ghcr.io/mstuart/tare` (GHCR) are live on each tagged release; build from source or
   `cargo install --git` to track HEAD between releases.
 - **Live-smoke-tested, not production-hardened** — one full round-trip through `tare-proxy` against the

@@ -100,7 +100,7 @@ when verbosity spikes (the `x-tare-verbosity-spike` signal in
 curl -fsSL https://raw.githubusercontent.com/mstuart/tare/main/install.sh | sh   # → ~/.local/bin
 # or:  npm install -g tare-ai
 # or:  docker pull ghcr.io/mstuart/tare
-# or:  cargo install tare-cli                    # crates.io publish pending
+# or:  cargo install tare-cli
 # or:  git clone https://github.com/mstuart/tare && cd tare && cargo build --release
 
 # 2 — run as a proxy (point your agent's base URL at http://localhost:8787)
@@ -128,7 +128,7 @@ Response headers (`x-tare-input-tokens`, `x-tare-net-tokens`, `x-tare-dropped`, 
 ## Integrations
 
 ```python
-# pip install tare-compress   (PyPI publish pending)
+# pip install tare-compress
 import tare
 out = tare.compress(blocks_json, task="fix the login bug")   # in-process, no proxy needed
 ```

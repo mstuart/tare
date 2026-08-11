@@ -42,6 +42,59 @@ jobs:
       - name: Build (release)
         run: cargo build --workspace --release
 
+  npm:
+    name: npm adapters · package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Test JS adapters
+        working-directory: npm
+        run: npm test
+      - name: Validate npm package
+        working-directory: npm
+        run: npm pack --dry-run
+
+  python:
+    name: Python integrations · package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: Swatinem/rust-cache@v2
+      - name: Create Python test environment
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip maturin pytest
+      - name: Build Python extension for tests
+        run: .venv/bin/python -m maturin develop -m crates/tare-py/Cargo.toml
+      - name: Test Python integrations
+        run: .venv/bin/python -m pytest crates/tare-py/tests
+      - name: Validate Python package
+        run: .venv/bin/python -m maturin build --sdist --out dist -m crates/tare-py/Cargo.toml
+
+  packages:
+    name: Rust packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate publishable Rust packages
+        run: |
+          cargo package --list -p tare-tokenize >/dev/null
+          cargo package --list -p tare-cache >/dev/null
+          cargo package --list -p tare-core >/dev/null
+          cargo package --list -p tare-memory >/dev/null
+          cargo package --list -p tare-cli >/dev/null
+          cargo package --list -p tare-proxy >/dev/null
+          cargo package --list -p tare-mcp >/dev/null
+
   deny:
     name: cargo-deny (licenses · advisories · bans)
     runs-on: ubuntu-latest

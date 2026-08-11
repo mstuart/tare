@@ -3,7 +3,7 @@
 # this platform from a GitHub Release. No Rust toolchain required.
 #
 #   curl -fsSL https://raw.githubusercontent.com/mstuart/tare/main/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --version v0.1.0 --dir /usr/local/bin
+#   curl -fsSL .../install.sh | sh -s -- --version v0.2.0 --dir /usr/local/bin
 #
 # Env overrides: TARE_VERSION, TARE_INSTALL_DIR, TARE_DOWNLOAD_BASE (mirror/local base URL).
 set -eu
