@@ -11,7 +11,7 @@ const r = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
 if (r.error) {
   console.error(
     r.error.code === "ENOENT"
-      ? "[tare] binary missing — reinstall: npm install -g @mstuart/tare"
+      ? "[tare] binary missing — reinstall: npm install -g tare-ai"
       : `[tare] ${r.error.message}`
   );
   process.exit(1);

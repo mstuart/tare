@@ -186,8 +186,8 @@ it, it detects the install method from the binary path (npm vs. the `curl` insta
 
 ```bash
 tare update --check
-# current: v0.1.0
-# latest : v0.1.0
+# current: v0.2.0
+# latest : v0.2.0
 # → already up to date.
 ```
 
