@@ -210,7 +210,7 @@ def test_anthropic_with_tare_raises_without_anthropic(monkeypatch: pytest.Monkey
     monkeypatch.setitem(sys.modules, "anthropic", None)  # type: ignore[arg-type]
     sys.modules.pop("tare.integrations", None)
     import importlib
-    fresh = importlib.reload(integrations)
+    fresh = importlib.import_module("tare.integrations")
 
     with pytest.raises(ImportError, match="anthropic"):
         fresh.anthropic_with_tare()
@@ -222,7 +222,7 @@ def test_openai_with_tare_raises_without_openai(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setitem(sys.modules, "openai", None)  # type: ignore[arg-type]
     sys.modules.pop("tare.integrations", None)
     import importlib
-    fresh = importlib.reload(integrations)
+    fresh = importlib.import_module("tare.integrations")
 
     with pytest.raises(ImportError, match="openai"):
         fresh.openai_with_tare()

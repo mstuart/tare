@@ -9,9 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to build and attach binaries to (e.g. v0.1.0)"
+        description: "Existing release tag to build and attach binaries to (e.g. v0.2.0)"
         required: true
-        default: "v0.1.0"
 
 permissions:
   contents: write
