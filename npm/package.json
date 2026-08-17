@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
-    "ultracite": "7.10.2"
+    "ultracite": "7.10.3"
   },
   "engines": {
     "node": ">=18"
