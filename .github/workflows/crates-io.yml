@@ -4,6 +4,12 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: Use the temporary crates.io token for first publication
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -20,12 +26,19 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: Authenticate with crates.io
+        if: ${{ !inputs.bootstrap }}
         id: auth
         uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
 
+      - name: Validate bootstrap token
+        if: ${{ inputs.bootstrap }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: test -n "$CARGO_REGISTRY_TOKEN"
+
       - name: Publish crates to crates.io
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.bootstrap && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
         shell: bash
         run: |
           cargo publish -p tare-tokenize --no-verify
