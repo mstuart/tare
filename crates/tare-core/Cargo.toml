@@ -32,7 +32,7 @@ tree-sitter-java = "0.23"
 tree-sitter-c = "0.24"
 tree-sitter-cpp = "0.23"
 tree-sitter-perl = "1.1"
-fastembed = { version = "5", optional = true }
+fastembed = { version = "6", optional = true }
 anyhow = { version = "1", optional = true }
 
 [dev-dependencies]
