@@ -177,8 +177,18 @@ class LiteLLMHandler:
 DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024
 
 
-class _RequestBodyTooLarge(Exception):
-    """Signal that an ASGI request exceeded the configured body limit."""
+class _RequestBodyTooLarge(BaseException):
+    """Signal that an ASGI request exceeded the configured body limit.
+
+    Subclasses ``BaseException`` (not ``Exception``) so that an inner
+    application's catch-all exception middleware cannot intercept it. If it
+    were an ordinary ``Exception``, wrapping an app that has its own error
+    middleware (e.g. ``CompressionMiddleware(existing_fastapi_app)``) would
+    let that middleware emit a 500 and mark the response started before the
+    signal reaches our handler, so oversized chunked requests would get a 500
+    instead of the documented 413. Keeping it out of the ``Exception``
+    hierarchy lets the signal propagate cleanly to the 413 handler below.
+    """
 
 
 class CompressionMiddleware:
