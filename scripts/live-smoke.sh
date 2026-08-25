@@ -14,9 +14,27 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 cargo build --release -p tare-proxy --manifest-path "$ROOT/Cargo.toml"
 
-TARE_UPSTREAM=https://api.anthropic.com TARE_PORT="$PORT" "$ROOT/target/release/tare-proxy" &
+PROXY_LOG="$(mktemp)"
+TARE_UPSTREAM=https://api.anthropic.com TARE_PORT="$PORT" "$ROOT/target/release/tare-proxy" 2>"$PROXY_LOG" &
 PROXY=$!
-trap 'kill "$PROXY" 2>/dev/null || true' EXIT
+trap 'kill "$PROXY" 2>/dev/null || true; rm -f "$PROXY_LOG"' EXIT
+
+# Do not send the credential until this exact proxy confirms that it owns the listener.
+for _ in {1..100}; do
+  if grep -Fq "[tare-proxy] listening on :$PORT " "$PROXY_LOG"; then
+    break
+  fi
+  if ! kill -0 "$PROXY" 2>/dev/null; then
+    cat "$PROXY_LOG" >&2
+    echo "tare-proxy exited before binding port $PORT" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+if ! grep -Fq "[tare-proxy] listening on :$PORT " "$PROXY_LOG"; then
+  echo "tare-proxy did not bind port $PORT within 10 seconds" >&2
+  exit 1
+fi
 
 req=$(cat <<JSON
 {"model":"$MODEL","max_tokens":60,
