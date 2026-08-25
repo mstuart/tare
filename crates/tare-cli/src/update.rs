@@ -22,6 +22,10 @@ pub fn run(opts: UpdateOpts) {
             std::process::exit(1);
         }
     };
+    if !is_canonical_release_tag(&latest) {
+        eprintln!("tare update: latest release has an invalid version tag: {latest}");
+        std::process::exit(1);
+    }
     let latest_ver = latest.trim_start_matches('v');
 
     println!("current: v{CURRENT}");
@@ -101,6 +105,18 @@ fn latest_release_tag() -> Result<String, String> {
         .ok_or_else(|| "no tag_name in the GitHub release response".into())
 }
 
+fn is_canonical_release_tag(tag: &str) -> bool {
+    let version = tag.strip_prefix('v').unwrap_or(tag);
+    let mut parts = version.split('.');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(major), Some(minor), Some(patch), None)
+            if [major, minor, patch]
+                .into_iter()
+                .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+    )
+}
+
 enum InstallMethod {
     Npm,
     Curl,
@@ -170,5 +186,14 @@ mod tests {
             installer_url("v1.2.3"),
             "https://raw.githubusercontent.com/mstuart/tare/v1.2.3/install.sh"
         );
+    }
+
+    #[test]
+    fn release_tags_must_be_canonical_versions() {
+        assert!(is_canonical_release_tag("v1.2.3"));
+        assert!(is_canonical_release_tag("1.2.3"));
+        assert!(!is_canonical_release_tag("999evil/payload"));
+        assert!(!is_canonical_release_tag("v1.2.3-beta.1"));
+        assert!(!is_canonical_release_tag("v1.2"));
     }
 }
