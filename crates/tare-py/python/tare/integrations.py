@@ -241,29 +241,39 @@ class CompressionMiddleware:
                 await self._send_payload_too_large(send)
                 return
 
-        body_buffer = bytearray()
-        event = await receive()
-        while True:
-            chunk = event.get("body", b"")
-            if len(body_buffer) + len(chunk) > self.max_body_bytes:
-                await self._send_payload_too_large(send)
-                return
-            body_buffer.extend(chunk)
-            if not event.get("more_body", False):
-                break
-            event = await receive()
-
-        body = self._maybe_compress_body(bytes(body_buffer))
-        body_delivered = False
+        body: bytes | None = None
+        response_started = False
 
         async def patched_receive() -> dict:
-            nonlocal body_delivered
-            if not body_delivered:
-                body_delivered = True
-                return {"type": "http.request", "body": body, "more_body": False}
-            return await receive()
+            nonlocal body
+            if body is not None:
+                return await receive()
 
-        await self.app(scope, patched_receive, send)
+            body_buffer = bytearray()
+            event = await receive()
+            while True:
+                chunk = event.get("body", b"")
+                if len(body_buffer) + len(chunk) > self.max_body_bytes:
+                    raise _RequestBodyTooLarge
+                body_buffer.extend(chunk)
+                if not event.get("more_body", False):
+                    break
+                event = await receive()
+            body = self._maybe_compress_body(bytes(body_buffer))
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def patched_send(event: dict) -> None:
+            nonlocal response_started
+            if event.get("type") == "http.response.start":
+                response_started = True
+            await send(event)
+
+        try:
+            await self.app(scope, patched_receive, patched_send)
+        except _RequestBodyTooLarge:
+            if response_started:
+                raise
+            await self._send_payload_too_large(send)
 
     @staticmethod
     async def _send_payload_too_large(send: Any) -> None:

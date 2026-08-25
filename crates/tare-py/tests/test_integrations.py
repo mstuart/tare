@@ -175,6 +175,36 @@ def test_compression_middleware_rejects_large_chunked_body() -> None:
     assert sent_events[1]["body"] == b"Request body too large"
 
 
+def test_compression_middleware_does_not_replace_started_response() -> None:
+    import pytest
+
+    from tare.integrations import CompressionMiddleware, _RequestBodyTooLarge
+
+    received_events = iter(
+        [
+            {"type": "http.request", "body": b"1234", "more_body": True},
+            {"type": "http.request", "body": b"5678", "more_body": False},
+        ]
+    )
+    sent_events: list[dict] = []
+
+    async def receive() -> dict:
+        return next(received_events)
+
+    async def send(event: dict) -> None:
+        sent_events.append(event)
+
+    async def app(scope: dict, app_receive: object, app_send: object) -> None:
+        await app_send({"type": "http.response.start", "status": 200})  # type: ignore[operator]
+        await app_receive()  # type: ignore[operator]
+
+    middleware = CompressionMiddleware(app, max_body_bytes=7)
+    with pytest.raises(_RequestBodyTooLarge):
+        asyncio.run(middleware({"type": "http"}, receive, send))
+
+    assert sent_events == [{"type": "http.response.start", "status": 200}]
+
+
 def test_compression_middleware_rejects_large_content_length_early() -> None:
     from tare.integrations import CompressionMiddleware
 
