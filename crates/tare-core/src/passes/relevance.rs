@@ -1,6 +1,7 @@
 use crate::plan::{DropReason, PlanEntry, SegmentAction};
 use crate::planner::{Pass, PlanCtx};
 use crate::segment::SegmentKind;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Query-conditioned relevance pruning (spec §7 B1, deterministic v1). Drops droppable
 /// tool-result/file-read segments whose symbols are disjoint from the task query symbols,
@@ -41,7 +42,7 @@ impl Pass for RelevancePass {
         let max_pos = ctx.segments.iter().map(|s| s.position).max().unwrap_or(0);
 
         // symbols per segment (path-aware: tree-sitter for known code extensions, regex otherwise)
-        let seg_syms: Vec<std::collections::HashSet<String>> = ctx
+        let seg_syms: Vec<HashSet<String>> = ctx
             .segments
             .iter()
             .map(|s| {
@@ -52,22 +53,37 @@ impl Pass for RelevancePass {
             })
             .collect();
 
-        // BFS: relevance propagates from task-overlapping segments through shared symbols
-        let mut relevant = vec![false; ctx.segments.len()];
-        let mut active: std::collections::HashSet<String> = ctx.task.symbols.clone();
-        loop {
-            let mut changed = false;
-            for i in 0..ctx.segments.len() {
-                if !relevant[i] && !seg_syms[i].is_disjoint(&active) {
-                    relevant[i] = true;
-                    for s in &seg_syms[i] {
-                        active.insert(s.clone());
-                    }
-                    changed = true;
-                }
+        // Index symbols once so transitive relevance can be traversed without repeatedly
+        // scanning every segment. Each symbol and segment-symbol edge is visited at most once.
+        let mut segments_by_symbol: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (segment_index, symbols) in seg_syms.iter().enumerate() {
+            for symbol in symbols {
+                segments_by_symbol
+                    .entry(symbol.as_str())
+                    .or_default()
+                    .push(segment_index);
             }
-            if !changed {
-                break;
+        }
+
+        // BFS: relevance propagates from task-overlapping segments through shared symbols.
+        let mut relevant = vec![false; ctx.segments.len()];
+        let mut visited_symbols: HashSet<&str> = HashSet::new();
+        let mut active_symbols: VecDeque<&str> =
+            ctx.task.symbols.iter().map(String::as_str).collect();
+        while let Some(symbol) = active_symbols.pop_front() {
+            if !visited_symbols.insert(symbol) {
+                continue;
+            }
+            if let Some(segment_indexes) = segments_by_symbol.get(symbol) {
+                for &segment_index in segment_indexes {
+                    if relevant[segment_index] {
+                        continue;
+                    }
+                    relevant[segment_index] = true;
+                    for connected_symbol in &seg_syms[segment_index] {
+                        active_symbols.push_back(connected_symbol);
+                    }
+                }
             }
         }
 
@@ -230,5 +246,26 @@ mod tests {
             plan.entries[2].action,
             SegmentAction::Drop(DropReason::IrrelevantBySlice)
         ); // unconnected
+    }
+
+    #[test]
+    fn relevance_propagates_through_reverse_ordered_chain() {
+        let task = TaskSignal::from_text("symbol_zero");
+        let segs = vec![
+            seg(0, 0, SegmentKind::FileRead, "symbol_two symbol_three"),
+            seg(1, 1, SegmentKind::FileRead, "symbol_one symbol_two"),
+            seg(2, 2, SegmentKind::FileRead, "symbol_zero symbol_one"),
+        ];
+
+        let plan = Planner::new(vec![Box::new(RelevancePass { recency_keep: 0 })]).plan_with_task(
+            &segs,
+            &SessionState::default(),
+            &task,
+        );
+
+        assert!(plan
+            .entries
+            .iter()
+            .all(|entry| entry.action == SegmentAction::Keep));
     }
 }
