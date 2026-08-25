@@ -34,10 +34,25 @@ pub fn admin_get(port: u16, path: &str) -> Result<serde_json::Value, String> {
         .map_err(|e| format!("read: {e}"))?;
 
     // Split headers / body at the first blank line (HTTP/1.x separator).
-    let body = response
-        .split("\r\n\r\n")
-        .nth(1)
+    let (headers, body) = response
+        .split_once("\r\n\r\n")
         .ok_or_else(|| "invalid HTTP response: no body separator".to_string())?;
+    let status = headers
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| "invalid HTTP response: malformed status line".to_string())?;
+    match status {
+        200..=299 => {}
+        401 => return Err("proxy rejected TARE_ADMIN_TOKEN".to_string()),
+        404 => {
+            return Err(
+                "proxy admin API is disabled; set TARE_ADMIN_TOKEN on the proxy".to_string(),
+            )
+        }
+        _ => return Err(format!("proxy admin API returned HTTP {status}")),
+    }
 
     serde_json::from_str(body.trim()).map_err(|e| format!("JSON parse: {e}"))
 }

@@ -160,7 +160,9 @@ Live savings panel that polls the proxy's `GET /admin/stats` and redraws every `
 - `--interval-ms N` — refresh interval in milliseconds (default `1000`).
 
 ```bash
-tare dashboard --once
+export TARE_ADMIN_TOKEN="$(openssl rand -hex 32)"
+TARE_ADMIN_TOKEN="$TARE_ADMIN_TOKEN" tare-proxy &
+TARE_ADMIN_TOKEN="$TARE_ADMIN_TOKEN" tare dashboard --once
 ```
 
 ## `tare output-savings`
@@ -172,8 +174,9 @@ that bypass compression as a control arm).
 - `--port N` — proxy port (defaults to `$TARE_PORT` or `8787`).
 
 ```bash
-TARE_OUTPUT_HOLDOUT=0.1 tare-proxy &      # 10% of sessions form the control arm
-tare output-savings
+export TARE_ADMIN_TOKEN="$(openssl rand -hex 32)"
+TARE_ADMIN_TOKEN="$TARE_ADMIN_TOKEN" TARE_OUTPUT_HOLDOUT=0.1 tare-proxy &
+TARE_ADMIN_TOKEN="$TARE_ADMIN_TOKEN" tare output-savings
 # Output reduction: 31.7% (95% CI 27.7%..35.7%) [n_shaped=900, n_holdout=100]
 ```
 

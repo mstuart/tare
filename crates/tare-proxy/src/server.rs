@@ -256,14 +256,18 @@ async fn handle_stats(
     .into_response()
 }
 
-async fn handle_runtime_env(
-    State(state): State<Arc<ProxyState>>,
-    headers: HeaderMap,
-    Json(body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    if let Err(status) = authorize_admin(&headers, &state) {
+async fn handle_runtime_env(State(state): State<Arc<ProxyState>>, request: Request) -> Response {
+    if let Err(status) = authorize_admin(request.headers(), &state) {
         return status.into_response();
     }
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(body) => body,
+        Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
+    };
+    let body = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+        Ok(body) => body,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
     let mut cfg = match state.runtime_cfg.lock() {
         Ok(g) => g,
         Err(e) => e.into_inner(),
