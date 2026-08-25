@@ -58,6 +58,9 @@ async fn main() -> ExitCode {
             enabled,
             recency_keep,
         }),
+        admin_token: std::env::var("TARE_ADMIN_TOKEN")
+            .ok()
+            .filter(|token| !token.is_empty()),
         holdout_frac,
         start: std::time::Instant::now(),
         monitors: Default::default(),

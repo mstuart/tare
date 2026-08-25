@@ -123,7 +123,8 @@ ps aux     | tare compact-lossy --max-rows 30 --max-field 110
 
 Response headers (`x-tare-input-tokens`, `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`,
 `x-tare-verbosity-spike`, `x-tare-halted`) report what each turn did; `GET /admin/stats` and
-`POST /admin/runtime-env` expose live stats and hot config. Details: [getting started](docs/getting-started.md).
+`POST /admin/runtime-env` expose live stats and hot config when `TARE_ADMIN_TOKEN` is set; clients
+must send the token in `x-tare-admin-token`. Details: [getting started](docs/getting-started.md).
 
 ## Integrations
 

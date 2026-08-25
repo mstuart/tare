@@ -33,8 +33,10 @@ pub struct ProxyState {
     pub upstream: String,               // e.g. "https://api.anthropic.com"
     pub opts: CompressOpts, // only min_savings used at runtime; enabled/recency_keep → runtime_cfg
     pub runtime_cfg: Mutex<RuntimeCfg>, // hot-swappable enabled + recency_keep
-    pub holdout_frac: f64,  // TARE_OUTPUT_HOLDOUT: deterministic per-session bypass fraction
-    pub start: Instant,     // process start for uptime_secs
+    /// Secret required in `x-tare-admin-token`; `None` disables the admin surface.
+    pub admin_token: Option<String>,
+    pub holdout_frac: f64, // TARE_OUTPUT_HOLDOUT: deterministic per-session bypass fraction
+    pub start: Instant,    // process start for uptime_secs
     pub monitors: Mutex<HashMap<u64, HitRateMonitor>>, // per-session hit-rate monitors (R5)
     pub outputs: Mutex<HashMap<u64, OutputMonitor>>, // per-session output-side monitors (compression-paradox sensor)
     pub seen_sessions: Mutex<HashSet<u64>>, // distinct session_ids seen (soft-bounded by MAX_SESSIONS)
@@ -186,7 +188,27 @@ const CONTEXT_WINDOW_TOKENS: f64 = 200_000.0; // default model-window estimate; 
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024; // cap request-body buffering (DoS/OOM guard); 413 above this
 const MAX_SESSIONS: usize = 10_000; // bound the per-session monitor maps (cleared on overflow; soft state)
 
-async fn handle_stats(State(state): State<Arc<ProxyState>>) -> impl IntoResponse {
+fn authorize_admin(headers: &HeaderMap, state: &ProxyState) -> Result<(), StatusCode> {
+    let Some(expected) = state.admin_token.as_deref() else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    let supplied = headers
+        .get("x-tare-admin-token")
+        .and_then(|value| value.to_str().ok());
+    if supplied == Some(expected) {
+        Ok(())
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+async fn handle_stats(
+    State(state): State<Arc<ProxyState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if let Err(status) = authorize_admin(&headers, &state) {
+        return status.into_response();
+    }
     let requests = state.cnt_requests.load(Ordering::Relaxed);
     let input_tokens = state.cnt_input_tokens.load(Ordering::Relaxed);
     let net_tokens = state.cnt_net_tokens.load(Ordering::Relaxed);
@@ -231,12 +253,17 @@ async fn handle_stats(State(state): State<Arc<ProxyState>>) -> impl IntoResponse
         "recency_keep": recency_keep,
         "uptime_secs": uptime_secs
     }))
+    .into_response()
 }
 
 async fn handle_runtime_env(
     State(state): State<Arc<ProxyState>>,
+    headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    if let Err(status) = authorize_admin(&headers, &state) {
+        return status.into_response();
+    }
     let mut cfg = match state.runtime_cfg.lock() {
         Ok(g) => g,
         Err(e) => e.into_inner(),
@@ -253,6 +280,7 @@ async fn handle_runtime_env(
         "enabled": cfg.enabled,
         "recency_keep": cfg.recency_keep
     }))
+    .into_response()
 }
 
 async fn handle_generic(

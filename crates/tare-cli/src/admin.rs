@@ -17,7 +17,13 @@ pub fn admin_get(port: u16, path: &str) -> Result<serde_json::Value, String> {
         .set_read_timeout(Some(Duration::from_secs(10)))
         .map_err(|e| format!("set_read_timeout: {e}"))?;
 
-    let request = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n");
+    let token = std::env::var("TARE_ADMIN_TOKEN")
+        .map_err(|_| "TARE_ADMIN_TOKEN is required for admin requests".to_string())?;
+    if token.is_empty() || token.contains(['\r', '\n']) {
+        return Err("TARE_ADMIN_TOKEN must be non-empty and contain no newlines".to_string());
+    }
+    let request =
+        format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nx-tare-admin-token: {token}\r\n\r\n");
     stream
         .write_all(request.as_bytes())
         .map_err(|e| format!("write: {e}"))?;
