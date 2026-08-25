@@ -174,6 +174,13 @@ class LiteLLMHandler:
 # ASGI middleware
 # ---------------------------------------------------------------------------
 
+DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024
+
+
+class _RequestBodyTooLarge(Exception):
+    """Signal that an ASGI request exceeded the configured body limit."""
+
+
 class CompressionMiddleware:
     """ASGI middleware that compresses JSON request bodies containing 'messages'.
 
@@ -195,16 +202,44 @@ class CompressionMiddleware:
         The inner ASGI application.
     task:
         Optional task hint forwarded to :func:`compress_messages`.
+    max_body_bytes:
+        Maximum request body size to buffer. Larger requests receive a 413
+        response. Defaults to 32 MiB, matching the tare proxy.
     """
 
-    def __init__(self, app: Any, task: str = "") -> None:
+    def __init__(
+        self,
+        app: Any,
+        task: str = "",
+        max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    ) -> None:
+        if max_body_bytes < 1:
+            raise ValueError("max_body_bytes must be positive")
         self.app = app
         self.task = task
+        self.max_body_bytes = max_body_bytes
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
+
+        content_length = next(
+            (
+                value
+                for name, value in scope.get("headers", [])
+                if name.lower() == b"content-length"
+            ),
+            None,
+        )
+        if content_length is not None:
+            try:
+                body_is_too_large = int(content_length) > self.max_body_bytes
+            except ValueError:
+                body_is_too_large = False
+            if body_is_too_large:
+                await self._send_payload_too_large(send)
+                return
 
         consumed: list[bytes] = []
 
@@ -215,16 +250,42 @@ class CompressionMiddleware:
                     "body": b"".join(consumed),
                     "more_body": False,
                 }
+            body_chunks: list[bytes] = []
+            body_size = 0
             event = await receive()
-            body = event.get("body", b"")
-            while event.get("more_body", False):
+            while True:
+                chunk = event.get("body", b"")
+                body_size += len(chunk)
+                if body_size > self.max_body_bytes:
+                    raise _RequestBodyTooLarge
+                body_chunks.append(chunk)
+                if not event.get("more_body", False):
+                    break
                 event = await receive()
-                body += event.get("body", b"")
+            body = b"".join(body_chunks)
             body = self._maybe_compress_body(body)
             consumed.append(body)
             return {"type": "http.request", "body": body, "more_body": False}
 
-        await self.app(scope, patched_receive, send)
+        try:
+            await self.app(scope, patched_receive, send)
+        except _RequestBodyTooLarge:
+            await self._send_payload_too_large(send)
+
+    @staticmethod
+    async def _send_payload_too_large(send: Any) -> None:
+        body = b"Request body too large"
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
     def _maybe_compress_body(self, body: bytes) -> bytes:
         """Return compressed body if it contains a 'messages' key; else passthrough."""
