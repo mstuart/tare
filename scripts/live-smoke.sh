@@ -9,15 +9,33 @@ set -euo pipefail
 
 : "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (a billable Anthropic API key) before running}"
 PORT="${TARE_PORT:-8799}"
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( 10#$PORT > 65535 )); then
+  echo "TARE_PORT must be an integer from 0 to 65535" >&2
+  exit 1
+fi
+PORT=$((10#$PORT))
 MODEL="${TARE_SMOKE_MODEL:-claude-haiku-4-5-20251001}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 cargo build --release -p tare-proxy --manifest-path "$ROOT/Cargo.toml"
 
 PROXY_LOG="$(mktemp)"
+smoke_exit=0
 TARE_UPSTREAM=https://api.anthropic.com TARE_PORT="$PORT" "$ROOT/target/release/tare-proxy" 2>"$PROXY_LOG" &
 PROXY=$!
-trap 'kill "$PROXY" 2>/dev/null || true; rm -f "$PROXY_LOG"' EXIT
+cleanup() {
+  smoke_exit=$?
+  kill "$PROXY" 2>/dev/null || true
+  if (( smoke_exit != 0 )); then
+    echo "-- tare-proxy log --" >&2
+    cat "$PROXY_LOG" >&2
+  else
+    grep -vF '[tare-proxy] listening on :' "$PROXY_LOG" >&2 || true
+  fi
+  rm -f "$PROXY_LOG"
+  exit "$smoke_exit"
+}
+trap cleanup EXIT
 
 # Do not send the credential until this exact proxy confirms that it owns the listener.
 for _ in {1..100}; do
