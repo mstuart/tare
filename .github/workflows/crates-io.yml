@@ -28,16 +28,33 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         shell: bash
         run: |
-          cargo publish -p tare-tokenize --no-verify
-          sleep 20
-          cargo publish -p tare-cache --no-verify
-          sleep 20
-          cargo publish -p tare-core --no-verify
-          sleep 20
-          cargo publish -p tare-memory --no-verify
-          sleep 20
-          cargo publish -p tare-cli --no-verify
-          sleep 20
-          cargo publish -p tare-proxy --no-verify
-          sleep 20
-          cargo publish -p tare-mcp --no-verify
+          set -euo pipefail
+
+          # Publish in dependency order. Idempotent: if a crate's current
+          # version is already on crates.io (e.g. a prior run published some
+          # crates then failed on a rate limit), skip it instead of failing on
+          # the duplicate. This makes the workflow safe to re-run to resume.
+          crates=(tare-tokenize tare-cache tare-core tare-memory tare-cli tare-proxy tare-mcp)
+
+          version_published() {
+            local crate="$1" version="$2"
+            # crates.io returns 200 with the version object if it exists.
+            curl -sf "https://crates.io/api/v1/crates/${crate}/${version}" \
+              -H "User-Agent: tare-ci-publish" >/dev/null 2>&1
+          }
+
+          for crate in "${crates[@]}"; do
+            version="$(cargo metadata --format-version=1 --no-deps \
+              | jq -r --arg c "$crate" '.packages[] | select(.name==$c) | .version')"
+            if [ -z "$version" ]; then
+              echo "::error::could not determine version for ${crate}"
+              exit 1
+            fi
+            if version_published "$crate" "$version"; then
+              echo "skip ${crate} ${version} (already published)"
+              continue
+            fi
+            echo "publishing ${crate} ${version}"
+            cargo publish -p "$crate" --no-verify
+            sleep 20
+          done
