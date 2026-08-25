@@ -241,36 +241,29 @@ class CompressionMiddleware:
                 await self._send_payload_too_large(send)
                 return
 
-        consumed: list[bytes] = []
+        body_buffer = bytearray()
+        event = await receive()
+        while True:
+            chunk = event.get("body", b"")
+            if len(body_buffer) + len(chunk) > self.max_body_bytes:
+                await self._send_payload_too_large(send)
+                return
+            body_buffer.extend(chunk)
+            if not event.get("more_body", False):
+                break
+            event = await receive()
+
+        body = self._maybe_compress_body(bytes(body_buffer))
+        body_delivered = False
 
         async def patched_receive() -> dict:
-            if consumed:
-                return {
-                    "type": "http.request",
-                    "body": b"".join(consumed),
-                    "more_body": False,
-                }
-            body_chunks: list[bytes] = []
-            body_size = 0
-            event = await receive()
-            while True:
-                chunk = event.get("body", b"")
-                body_size += len(chunk)
-                if body_size > self.max_body_bytes:
-                    raise _RequestBodyTooLarge
-                body_chunks.append(chunk)
-                if not event.get("more_body", False):
-                    break
-                event = await receive()
-            body = b"".join(body_chunks)
-            body = self._maybe_compress_body(body)
-            consumed.append(body)
-            return {"type": "http.request", "body": body, "more_body": False}
+            nonlocal body_delivered
+            if not body_delivered:
+                body_delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
 
-        try:
-            await self.app(scope, patched_receive, send)
-        except _RequestBodyTooLarge:
-            await self._send_payload_too_large(send)
+        await self.app(scope, patched_receive, send)
 
     @staticmethod
     async def _send_payload_too_large(send: Any) -> None:
