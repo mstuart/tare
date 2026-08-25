@@ -3,7 +3,9 @@
 //! path. No new crate deps: the GitHub API and the installer are reached by shelling out to `curl`.
 
 use std::cmp::Ordering;
+use std::io::Write;
 use std::process::Command;
+use std::process::Stdio;
 
 pub struct UpdateOpts {
     pub check: bool,
@@ -39,25 +41,43 @@ pub fn run(opts: UpdateOpts) {
 
     match detect_install_method() {
         InstallMethod::Npm => {
-            println!("Upgrading via npm: npm install -g tare-ai@latest");
+            let package = format!("tare-ai@{latest_ver}");
+            println!("Upgrading via npm: npm install -g {package}");
             report(
                 Command::new("npm")
-                    .args(["install", "-g", "tare-ai@latest"])
+                    .args(["install", "-g", &package])
                     .status(),
             );
         }
         InstallMethod::Curl => {
-            println!("Upgrading via the install script (curl | sh)…");
-            report(
-                Command::new("sh")
-                    .arg("-c")
-                    .arg(format!(
-                        "curl -fsSL https://raw.githubusercontent.com/{REPO}/main/install.sh | sh"
-                    ))
-                    .status(),
-            );
+            println!("Upgrading via the v{latest_ver} install script…");
+            report(run_install_script(&latest));
         }
     }
+}
+
+fn run_install_script(release_tag: &str) -> std::io::Result<std::process::ExitStatus> {
+    let script = Command::new("curl")
+        .args(["-fsSL", &installer_url(release_tag)])
+        .output()?;
+    if !script.status.success() {
+        return Ok(script.status);
+    }
+
+    let mut installer = Command::new("sh")
+        .args(["-s", "--", "--version", release_tag])
+        .stdin(Stdio::piped())
+        .spawn()?;
+    installer
+        .stdin
+        .take()
+        .expect("installer stdin was configured")
+        .write_all(&script.stdout)?;
+    installer.wait()
+}
+
+fn installer_url(release_tag: &str) -> String {
+    format!("https://raw.githubusercontent.com/{REPO}/{release_tag}/install.sh")
 }
 
 fn latest_release_tag() -> Result<String, String> {
@@ -142,5 +162,13 @@ mod tests {
         assert_eq!(cmp_semver("1.0.0", "0.9.9"), Ordering::Greater);
         assert_eq!(cmp_semver("v0.1.0", "0.1.0"), Ordering::Equal);
         assert_eq!(cmp_semver("0.1.0", "0.1"), Ordering::Equal);
+    }
+
+    #[test]
+    fn installer_is_pinned_to_release_tag() {
+        assert_eq!(
+            installer_url("v1.2.3"),
+            "https://raw.githubusercontent.com/mstuart/tare/v1.2.3/install.sh"
+        );
     }
 }
