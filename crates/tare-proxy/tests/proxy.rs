@@ -9,6 +9,7 @@ use tare_proxy::{
 };
 
 type Recorder = Arc<Mutex<Option<String>>>;
+const ADMIN_TOKEN: &str = "integration-test-admin-token";
 
 async fn upstream_handler(State(rec): State<Recorder>, body: Bytes) -> &'static str {
     *rec.lock().unwrap() = Some(String::from_utf8_lossy(&body).into_owned());
@@ -48,6 +49,7 @@ fn make_state(upstream: String, opts: CompressOpts) -> Arc<ProxyState> {
         client: reqwest::Client::new(),
         upstream,
         runtime_cfg: Mutex::new(runtime_cfg),
+        admin_token: Some(ADMIN_TOKEN.to_string()),
         opts,
         holdout_frac: 0.0,
         start: std::time::Instant::now(),
@@ -515,6 +517,37 @@ async fn count_tokens_exact_parses_input_tokens_and_falls_back() {
 
 // ── Admin surface tests ────────────────────────────────────────────────────────
 
+#[tokio::test]
+async fn admin_routes_reject_requests_without_the_admin_token() {
+    let state = make_state(
+        "http://127.0.0.1:1".to_string(),
+        CompressOpts {
+            enabled: true,
+            recency_keep: 4,
+            min_savings: 0,
+        },
+    );
+    let proxy_port = spawn_or_skip!(app(state));
+    let client = reqwest::Client::new();
+
+    let stats_status = client
+        .get(format!("http://127.0.0.1:{proxy_port}/admin/stats"))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(stats_status, reqwest::StatusCode::UNAUTHORIZED);
+
+    let runtime_status = client
+        .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .json(&serde_json::json!({"TARE_ENABLED": "false"}))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(runtime_status, reqwest::StatusCode::UNAUTHORIZED);
+}
+
 /// GET /admin/stats returns a JSON object with the exact fields specified in the contract,
 /// and the values are sensible after a couple of proxy requests.
 #[tokio::test]
@@ -560,6 +593,7 @@ async fn admin_stats_returns_correct_shape_and_counts_requests() {
 
     let stats: serde_json::Value = client
         .get(format!("http://127.0.0.1:{proxy_port}/admin/stats"))
+        .header("x-tare-admin-token", ADMIN_TOKEN)
         .send()
         .await
         .unwrap()
@@ -697,6 +731,7 @@ async fn admin_runtime_env_disables_and_reenables_compression() {
     // Disable via runtime-env
     let disable_resp: serde_json::Value = client
         .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .header("x-tare-admin-token", ADMIN_TOKEN)
         .json(&serde_json::json!({"TARE_ENABLED": "false"}))
         .send()
         .await
@@ -729,6 +764,7 @@ async fn admin_runtime_env_disables_and_reenables_compression() {
     // Re-enable and verify compression returns
     let enable_resp: serde_json::Value = client
         .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .header("x-tare-admin-token", ADMIN_TOKEN)
         .json(&serde_json::json!({"TARE_ENABLED": "true"}))
         .send()
         .await
@@ -781,6 +817,7 @@ async fn admin_runtime_env_updates_recency_keep() {
     // Update recency_keep to 8
     let resp: serde_json::Value = client
         .post(format!("http://127.0.0.1:{proxy_port}/admin/runtime-env"))
+        .header("x-tare-admin-token", ADMIN_TOKEN)
         .json(&serde_json::json!({"TARE_RECENCY": "8"}))
         .send()
         .await
@@ -801,6 +838,7 @@ async fn admin_runtime_env_updates_recency_keep() {
     // Verify stats also reflects the new recency_keep
     let stats: serde_json::Value = client
         .get(format!("http://127.0.0.1:{proxy_port}/admin/stats"))
+        .header("x-tare-admin-token", ADMIN_TOKEN)
         .send()
         .await
         .unwrap()

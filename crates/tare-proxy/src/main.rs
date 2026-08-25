@@ -46,6 +46,19 @@ async fn main() -> ExitCode {
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(0.0)
         .clamp(0.0, 1.0);
+    let admin_token = match std::env::var("TARE_ADMIN_TOKEN") {
+        Ok(token) if token.is_empty() => None,
+        Ok(token) => {
+            match axum::http::HeaderValue::from_str(&token) {
+                Ok(value) if matches!(value.to_str(), Ok(text) if text == token) => Some(token),
+                _ => {
+                    eprintln!("[tare-proxy] fatal: TARE_ADMIN_TOKEN must be a canonical HTTP header value");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        Err(_) => None,
+    };
     let state = Arc::new(ProxyState {
         client,
         upstream,
@@ -58,6 +71,7 @@ async fn main() -> ExitCode {
             enabled,
             recency_keep,
         }),
+        admin_token,
         holdout_frac,
         start: std::time::Instant::now(),
         monitors: Default::default(),

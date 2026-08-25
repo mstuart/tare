@@ -119,11 +119,13 @@ ps aux     | tare compact-lossy --max-rows 30 --max-field 110
 | `TARE_ENABLED` | `true` | set `0`/`false` for byte-exact passthrough |
 | `TARE_CONTEXT_LIMIT` | `200000` | model context window (drives the fill dial) |
 | `TARE_OUTPUT_HOLDOUT` | `0` | fraction of sessions left uncompressed (A/B for `tare output-savings`) |
+| `TARE_ADMIN_TOKEN` | unset | secret required by admin endpoints and CLI admin commands; unset disables the admin API |
 | `TARE_LOG` | unset | set it to log one line per turn with the compression report |
 
 Response headers (`x-tare-input-tokens`, `x-tare-net-tokens`, `x-tare-dropped`, `x-tare-aggression`,
 `x-tare-verbosity-spike`, `x-tare-halted`) report what each turn did; `GET /admin/stats` and
-`POST /admin/runtime-env` expose live stats and hot config. Details: [getting started](docs/getting-started.md).
+`POST /admin/runtime-env` expose live stats and hot config when `TARE_ADMIN_TOKEN` is set; clients
+must send the token in `x-tare-admin-token`. Details: [getting started](docs/getting-started.md).
 
 ## Integrations
 
