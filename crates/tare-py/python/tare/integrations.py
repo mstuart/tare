@@ -174,6 +174,23 @@ class LiteLLMHandler:
 # ASGI middleware
 # ---------------------------------------------------------------------------
 
+DEFAULT_MAX_BODY_BYTES = 32 * 1024 * 1024
+
+
+class _RequestBodyTooLarge(BaseException):
+    """Signal that an ASGI request exceeded the configured body limit.
+
+    Subclasses ``BaseException`` (not ``Exception``) so that an inner
+    application's catch-all exception middleware cannot intercept it. If it
+    were an ordinary ``Exception``, wrapping an app that has its own error
+    middleware (e.g. ``CompressionMiddleware(existing_fastapi_app)``) would
+    let that middleware emit a 500 and mark the response started before the
+    signal reaches our handler, so oversized chunked requests would get a 500
+    instead of the documented 413. Keeping it out of the ``Exception``
+    hierarchy lets the signal propagate cleanly to the 413 handler below.
+    """
+
+
 class CompressionMiddleware:
     """ASGI middleware that compresses JSON request bodies containing 'messages'.
 
@@ -195,36 +212,93 @@ class CompressionMiddleware:
         The inner ASGI application.
     task:
         Optional task hint forwarded to :func:`compress_messages`.
+    max_body_bytes:
+        Maximum request body size to buffer. Larger requests receive a 413
+        response. Defaults to 32 MiB, matching the tare proxy.
     """
 
-    def __init__(self, app: Any, task: str = "") -> None:
+    def __init__(
+        self,
+        app: Any,
+        task: str = "",
+        max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    ) -> None:
+        if max_body_bytes < 1:
+            raise ValueError("max_body_bytes must be positive")
         self.app = app
         self.task = task
+        self.max_body_bytes = max_body_bytes
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
 
-        consumed: list[bytes] = []
+        content_length = next(
+            (
+                value
+                for name, value in scope.get("headers", [])
+                if name.lower() == b"content-length"
+            ),
+            None,
+        )
+        if content_length is not None:
+            try:
+                body_is_too_large = int(content_length) > self.max_body_bytes
+            except ValueError:
+                body_is_too_large = False
+            if body_is_too_large:
+                await self._send_payload_too_large(send)
+                return
+
+        body: bytes | None = None
+        response_started = False
 
         async def patched_receive() -> dict:
-            if consumed:
-                return {
-                    "type": "http.request",
-                    "body": b"".join(consumed),
-                    "more_body": False,
-                }
+            nonlocal body
+            if body is not None:
+                return await receive()
+
+            body_buffer = bytearray()
             event = await receive()
-            body = event.get("body", b"")
-            while event.get("more_body", False):
+            while True:
+                chunk = event.get("body", b"")
+                if len(body_buffer) + len(chunk) > self.max_body_bytes:
+                    raise _RequestBodyTooLarge
+                body_buffer.extend(chunk)
+                if not event.get("more_body", False):
+                    break
                 event = await receive()
-                body += event.get("body", b"")
-            body = self._maybe_compress_body(body)
-            consumed.append(body)
+            body = self._maybe_compress_body(bytes(body_buffer))
             return {"type": "http.request", "body": body, "more_body": False}
 
-        await self.app(scope, patched_receive, send)
+        async def patched_send(event: dict) -> None:
+            nonlocal response_started
+            if event.get("type") == "http.response.start":
+                response_started = True
+            await send(event)
+
+        try:
+            await self.app(scope, patched_receive, patched_send)
+        except _RequestBodyTooLarge:
+            if response_started:
+                raise
+            await self._send_payload_too_large(send)
+
+    @staticmethod
+    async def _send_payload_too_large(send: Any) -> None:
+        body = b"Request body too large"
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
     def _maybe_compress_body(self, body: bytes) -> bytes:
         """Return compressed body if it contains a 'messages' key; else passthrough."""
