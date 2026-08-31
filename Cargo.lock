@@ -822,9 +822,9 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastembed"
-version = "6.0.0"
+version = "6.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b2b9435b3f3218e0d2aba98405d5afeb4a0aa974729d4eb4577118762f31564"
+checksum = "b5e6a29ef0fc303e63ce89f2b71d98bee9df51d79cbbedb78dd0d6ba9f3b172f"
 dependencies = [
  "hf-hub",
  "image",
@@ -3222,9 +3222,9 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.26.12"
+version = "0.26.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83c567a8e18ae93f20982c90370b16fd24023aeaf52f6052b96957ab253a0fec"
+checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
 dependencies = [
  "cc",
  "regex",
