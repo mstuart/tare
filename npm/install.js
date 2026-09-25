@@ -15,6 +15,7 @@ const VERSION = process.env.TARE_VERSION || `v${pkg.version}`;
 const BASE =
   process.env.TARE_DOWNLOAD_BASE ||
   `https://github.com/${REPO}/releases/download/${VERSION}`;
+const SHA256_PATTERN = /^[a-fA-F0-9]{64}$/;
 const WHITESPACE_PATTERN = /\s+/;
 
 function target() {
@@ -80,20 +81,8 @@ async function main() {
   const buf = await fetch(`${BASE}/${asset}`);
   fs.writeFileSync(tgz, buf);
 
-  // Verify the checksum if one is published alongside the asset.
-  try {
-    const [sum] = (await fetch(`${BASE}/${asset}.sha256`))
-      .toString("utf8")
-      .trim()
-      .split(WHITESPACE_PATTERN);
-    const got = crypto.createHash("sha256").update(buf).digest("hex");
-    if (sum && sum !== got) {
-      console.error(`[tare] checksum mismatch: ${got} != ${sum}`);
-      process.exit(1);
-    }
-  } catch {
-    /* no checksum published — proceed */
-  }
+  const checksum = await fetch(`${BASE}/${asset}.sha256`);
+  verifyChecksum(buf, checksum.toString("utf8"));
 
   execFileSync("tar", ["-xzf", tgz, "-C", vendor]);
   fs.unlinkSync(tgz);
@@ -106,7 +95,23 @@ async function main() {
   console.log(`[tare] installed tare, tare-proxy, tare-mcp into ${vendor}`);
 }
 
-main().catch((e) => {
-  console.error(`[tare] install failed: ${e.message}`);
-  process.exit(1);
-});
+function verifyChecksum(data, checksumFile) {
+  const [expected] = checksumFile.trim().split(WHITESPACE_PATTERN);
+  if (!SHA256_PATTERN.test(expected || "")) {
+    throw new Error("invalid SHA-256 checksum file");
+  }
+
+  const actual = crypto.createHash("sha256").update(data).digest("hex");
+  if (expected.toLowerCase() !== actual) {
+    throw new Error(`checksum mismatch: ${actual} != ${expected}`);
+  }
+}
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(`[tare] install failed: ${e.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { verifyChecksum };

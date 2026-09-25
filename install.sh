@@ -50,12 +50,13 @@ trap 'rm -rf "$tmp"' EXIT
 echo "tare: downloading $asset ($VERSION)…"
 curl -fsSL "$url" -o "$tmp/$asset"
 
-# Verify the checksum if one is published alongside the asset.
-if curl -fsSL "${url}.sha256" -o "$tmp/$asset.sha256" 2>/dev/null; then
-  ( cd "$tmp" && { sha256sum -c "$asset.sha256" >/dev/null 2>&1 \
-      || shasum -a 256 -c "$asset.sha256" >/dev/null 2>&1; } ) \
-    || { echo "tare: checksum verification failed." >&2; exit 1; }
-fi
+# Release artifacts always include checksums. Refuse an unverified binary if the checksum is
+# unavailable, malformed, or does not match.
+curl -fsSL "${url}.sha256" -o "$tmp/$asset.sha256" \
+  || { echo "tare: checksum download failed." >&2; exit 1; }
+( cd "$tmp" && { sha256sum -c "$asset.sha256" >/dev/null 2>&1 \
+    || shasum -a 256 -c "$asset.sha256" >/dev/null 2>&1; } ) \
+  || { echo "tare: checksum verification failed." >&2; exit 1; }
 
 tar -xzf "$tmp/$asset" -C "$tmp"
 mkdir -p "$INSTALL_DIR"

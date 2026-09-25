@@ -39,7 +39,7 @@
     "check": "ultracite check",
     "fix": "ultracite fix",
     "postinstall": "node install.js",
-    "test": "node test/adapters.test.js"
+    "test": "node test/adapters.test.js && node test/install.test.js"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
