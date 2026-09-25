@@ -66,6 +66,8 @@ const FORWARD_HEADERS: &[&str] = &[
     "authorization",
     "anthropic-version",
     "anthropic-beta",
+    "openai-organization",
+    "openai-project",
     "content-type",
 ];
 
