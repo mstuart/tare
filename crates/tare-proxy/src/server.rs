@@ -6,7 +6,7 @@ use crate::{
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderName, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -208,6 +208,33 @@ fn record_usage_chunk(head: &mut Vec<u8>, tail: &mut VecDeque<u8>, chunk: &[u8])
         tail.drain(..overflow);
     }
     tail.extend(chunk.iter().copied());
+}
+
+fn response_connection_tokens(headers: &HeaderMap) -> HashSet<HeaderName> {
+    headers
+        .get_all("connection")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .filter_map(|token| HeaderName::from_bytes(token.trim().as_bytes()).ok())
+        .collect()
+}
+
+fn should_forward_response_header(
+    name: &HeaderName,
+    connection_tokens: &HashSet<HeaderName>,
+) -> bool {
+    !matches!(
+        name.as_str(),
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    ) && !connection_tokens.contains(name)
 }
 
 fn authorize_admin(headers: &HeaderMap, state: &ProxyState) -> Result<(), StatusCode> {
@@ -440,9 +467,9 @@ async fn handle_generic(
             let status =
                 StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
             let mut builder = Response::builder().status(status);
+            let connection_tokens = response_connection_tokens(resp.headers());
             for (k, v) in resp.headers().iter() {
-                let kn = k.as_str();
-                if kn == "content-length" || kn == "transfer-encoding" || kn == "connection" {
+                if k == "content-length" || !should_forward_response_header(k, &connection_tokens) {
                     continue;
                 }
                 builder = builder.header(k, v);
@@ -618,8 +645,12 @@ mod tests {
     use std::collections::VecDeque;
 
     use axum::body::{to_bytes, Body};
+    use axum::http::{HeaderMap, HeaderName, HeaderValue};
 
-    use super::{record_usage_chunk, TAIL_SCAN_CAP, USAGE_SCAN_CAP};
+    use super::{
+        record_usage_chunk, response_connection_tokens, should_forward_response_header,
+        TAIL_SCAN_CAP, USAGE_SCAN_CAP,
+    };
 
     /// Pins the 413 discrimination used in handle_messages / handle_chat: when axum::body::to_bytes
     /// hits MAX_BODY_BYTES, the error's Display must contain "length limit". If a future bump to
@@ -657,5 +688,38 @@ mod tests {
         assert_eq!(head.len(), USAGE_SCAN_CAP);
         assert_eq!(tail.len(), TAIL_SCAN_CAP);
         assert!(tail.make_contiguous().ends_with(b"final"));
+    }
+
+    #[test]
+    fn response_header_filter_removes_standard_and_connection_named_hop_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "connection",
+            HeaderValue::from_static("keep-alive, x-upstream-internal"),
+        );
+        let connection_tokens = response_connection_tokens(&headers);
+
+        for name in [
+            "connection",
+            "keep-alive",
+            "proxy-authenticate",
+            "proxy-authorization",
+            "te",
+            "trailer",
+            "transfer-encoding",
+            "upgrade",
+            "x-upstream-internal",
+        ] {
+            let name = HeaderName::from_bytes(name.as_bytes()).unwrap();
+            assert!(
+                !should_forward_response_header(&name, &connection_tokens),
+                "{name} must not be forwarded"
+            );
+        }
+
+        assert!(should_forward_response_header(
+            &HeaderName::from_static("content-type"),
+            &connection_tokens
+        ));
     }
 }
