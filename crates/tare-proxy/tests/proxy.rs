@@ -1,7 +1,7 @@
 // Spin up a mock upstream that records the body it receives, run the tare proxy pointed at it,
 // POST a compressible request to the proxy, and assert the upstream got the COMPRESSED body
 // while the client got the upstream's canned response.
-use axum::{body::Bytes, extract::State, routing::post, Router};
+use axum::{body::Bytes, extract::State, http::HeaderMap, routing::post, Router};
 use std::sync::{Arc, Mutex};
 use tare_proxy::{
     server::{app, ProxyState, RuntimeCfg},
@@ -9,10 +9,19 @@ use tare_proxy::{
 };
 
 type Recorder = Arc<Mutex<Option<String>>>;
+type HeaderRecorder = Arc<Mutex<Option<HeaderMap>>>;
 const ADMIN_TOKEN: &str = "integration-test-admin-token";
 
 async fn upstream_handler(State(rec): State<Recorder>, body: Bytes) -> &'static str {
     *rec.lock().unwrap() = Some(String::from_utf8_lossy(&body).into_owned());
+    "{\"ok\":true}"
+}
+
+async fn header_upstream_handler(
+    State(rec): State<HeaderRecorder>,
+    headers: HeaderMap,
+) -> &'static str {
+    *rec.lock().unwrap() = Some(headers);
     "{\"ok\":true}"
 }
 
@@ -194,6 +203,45 @@ async fn openai_proxy_compresses_then_forwards_and_returns_upstream_response() {
     // structure intact: still valid JSON with 5 messages
     let v: serde_json::Value = serde_json::from_str(&received).unwrap();
     assert_eq!(v["messages"].as_array().unwrap().len(), 5);
+}
+
+#[tokio::test]
+async fn openai_proxy_forwards_tenant_scoping_headers() {
+    let rec: HeaderRecorder = Arc::new(Mutex::new(None));
+    let upstream = Router::new()
+        .route("/v1/chat/completions", post(header_upstream_handler))
+        .with_state(rec.clone());
+    let up_port = spawn_or_skip!(upstream);
+
+    let state = make_state(
+        format!("http://127.0.0.1:{up_port}"),
+        CompressOpts {
+            enabled: false,
+            ..Default::default()
+        },
+    );
+    let proxy_port = spawn_or_skip!(app(state));
+
+    reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{proxy_port}/v1/chat/completions"))
+        .header("authorization", "Bearer sk-test")
+        .header("openai-organization", "org-test")
+        .header("openai-project", "proj-test")
+        .json(&serde_json::json!({
+            "model": "gpt-x",
+            "messages": [{"role": "user", "content": "hello"}]
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let headers = rec
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("upstream received headers");
+    assert_eq!(headers["openai-organization"], "org-test");
+    assert_eq!(headers["openai-project"], "proj-test");
 }
 
 #[tokio::test]
