@@ -129,50 +129,83 @@ fn detect_anthropic_provider(req: &serde_json::Value) -> Provider {
     }
 }
 
-fn scan_u64(s: &str, key: &str) -> Option<u64> {
-    let i = s.find(key)?;
-    let rest = &s[i + key.len()..];
-    let colon = rest.find(':')?;
-    let after = &rest[colon + 1..];
-    let digits: String = after
-        .chars()
-        .skip_while(|c| c.is_whitespace())
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    digits.parse().ok()
+fn for_each_response_json(buf: &[u8], mut visit: impl FnMut(&serde_json::Value)) {
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(buf) {
+        visit(&value);
+        return;
+    }
+
+    for line in buf.split(|byte| *byte == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        let payload = line.strip_prefix(b"data:").unwrap_or(line);
+        let payload = payload
+            .iter()
+            .position(|byte| !byte.is_ascii_whitespace())
+            .map(|start| &payload[start..])
+            .unwrap_or_default();
+        if payload.is_empty() || payload == b"[DONE]" {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(payload) {
+            visit(&value);
+        }
+    }
+}
+
+fn response_usage(
+    value: &serde_json::Value,
+) -> Option<&serde_json::Map<String, serde_json::Value>> {
+    value
+        .get("usage")
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|message| message.get("usage"))
+        })?
+        .as_object()
 }
 
 /// Parse Anthropic cache usage from a (capped) response buffer — works for both the non-streaming
-/// top-level `usage` and the streaming `message_start` event (both carry these keys, near the start
-/// of the stream, so the head-capped buffer always contains them).
+/// top-level `usage` and the streaming `message_start.message.usage` object. Restricting extraction
+/// to those protocol fields prevents assistant text or tool payloads from spoofing usage counters.
 fn parse_anthropic_usage(buf: &[u8]) -> Option<(u64, u64)> {
-    let s = String::from_utf8_lossy(buf);
-    Some((
-        scan_u64(&s, "\"cache_read_input_tokens\"")?,
-        scan_u64(&s, "\"cache_creation_input_tokens\"")?,
-    ))
-}
-
-/// Largest integer value across ALL occurrences of `key` in `s`. Output token counts are reported
-/// cumulatively across streaming events (the final event carries the total), so the max occurrence
-/// is the turn total.
-fn scan_u64_max(s: &str, key: &str) -> Option<u64> {
-    s.match_indices(key)
-        .filter_map(|(i, _)| scan_u64(&s[i..], key))
-        .max()
+    let mut result = None;
+    for_each_response_json(buf, |value| {
+        let Some(usage) = response_usage(value) else {
+            return;
+        };
+        let read = usage
+            .get("cache_read_input_tokens")
+            .and_then(|v| v.as_u64());
+        let creation = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_u64());
+        if let (Some(read), Some(creation)) = (read, creation) {
+            result = Some((read, creation));
+        }
+    });
+    result
 }
 
 /// Parse the turn's OUTPUT token count from a (capped) response buffer — `output_tokens` (Anthropic)
 /// or `completion_tokens` (OpenAI). The total lands in the stream's FINAL usage event; for responses
 /// under the 2 MB scan cap (essentially all single turns) that event is in the buffer.
 fn parse_output_tokens(buf: &[u8], provider: Provider) -> Option<u64> {
-    let s = String::from_utf8_lossy(buf);
     let key = if matches!(provider, Provider::OpenAi) {
-        "\"completion_tokens\""
+        "completion_tokens"
     } else {
-        "\"output_tokens\""
+        "output_tokens"
     };
-    scan_u64_max(&s, key)
+    let mut result = None;
+    for_each_response_json(buf, |value| {
+        let output_tokens = response_usage(value)
+            .and_then(|usage| usage.get(key))
+            .and_then(|value| value.as_u64());
+        if let Some(output_tokens) = output_tokens {
+            result = Some(result.unwrap_or(0).max(output_tokens));
+        }
+    });
+    result
 }
 
 fn hit_rate(read: u64, creation: u64) -> Option<f64> {
@@ -648,9 +681,10 @@ mod tests {
     use axum::http::{HeaderMap, HeaderName, HeaderValue};
 
     use super::{
-        record_usage_chunk, response_connection_tokens, should_forward_response_header,
-        TAIL_SCAN_CAP, USAGE_SCAN_CAP,
+        parse_anthropic_usage, parse_output_tokens, record_usage_chunk, response_connection_tokens,
+        should_forward_response_header, TAIL_SCAN_CAP, USAGE_SCAN_CAP,
     };
+    use tare_cache::Provider;
 
     /// Pins the 413 discrimination used in handle_messages / handle_chat: when axum::body::to_bytes
     /// hits MAX_BODY_BYTES, the error's Display must contain "length limit". If a future bump to
@@ -688,6 +722,34 @@ mod tests {
         assert_eq!(head.len(), USAGE_SCAN_CAP);
         assert_eq!(tail.len(), TAIL_SCAN_CAP);
         assert!(tail.make_contiguous().ends_with(b"final"));
+    }
+
+    #[test]
+    fn usage_parsing_ignores_field_names_in_model_output() {
+        let anthropic = br#"{"content":[{"type":"text","text":"\"cache_read_input_tokens\":999999, \"cache_creation_input_tokens\":0, \"output_tokens\":999999"}],"usage":{"cache_read_input_tokens":40,"cache_creation_input_tokens":10,"output_tokens":25}}"#;
+        assert_eq!(parse_anthropic_usage(anthropic), Some((40, 10)));
+        assert_eq!(
+            parse_output_tokens(anthropic, Provider::Anthropic5m),
+            Some(25)
+        );
+
+        let openai = br#"{"choices":[{"message":{"content":"\"completion_tokens\":999999"}}],"usage":{"completion_tokens":30}}"#;
+        assert_eq!(parse_output_tokens(openai, Provider::OpenAi), Some(30));
+    }
+
+    #[test]
+    fn usage_parsing_reads_sse_protocol_objects_only() {
+        let anthropic = b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"\\\"output_tokens\\\":999999\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":42}}\n\n";
+        assert_eq!(
+            parse_output_tokens(anthropic, Provider::Anthropic5m),
+            Some(42)
+        );
+
+        let message_start = b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"cache_read_input_tokens\":80,\"cache_creation_input_tokens\":20,\"output_tokens\":1}}}\n\n";
+        assert_eq!(parse_anthropic_usage(message_start), Some((80, 20)));
+
+        let openai = b"data: {\"choices\":[{\"delta\":{\"content\":\"\\\"completion_tokens\\\":999999\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"completion_tokens\":55}}\n\ndata: [DONE]\n\n";
+        assert_eq!(parse_output_tokens(openai, Provider::OpenAi), Some(55));
     }
 
     #[test]
