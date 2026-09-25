@@ -190,6 +190,26 @@ const CONTEXT_WINDOW_TOKENS: f64 = 200_000.0; // default model-window estimate; 
 const MAX_BODY_BYTES: usize = 32 * 1024 * 1024; // cap request-body buffering (DoS/OOM guard); 413 above this
 const MAX_SESSIONS: usize = 10_000; // bound the per-session monitor maps (cleared on overflow; soft state)
 
+fn record_usage_chunk(head: &mut Vec<u8>, tail: &mut VecDeque<u8>, chunk: &[u8]) {
+    let head_remaining = USAGE_SCAN_CAP.saturating_sub(head.len());
+    head.extend_from_slice(&chunk[..chunk.len().min(head_remaining)]);
+
+    if chunk.len() >= TAIL_SCAN_CAP {
+        tail.clear();
+        tail.extend(chunk[chunk.len() - TAIL_SCAN_CAP..].iter().copied());
+        return;
+    }
+
+    let overflow = tail
+        .len()
+        .saturating_add(chunk.len())
+        .saturating_sub(TAIL_SCAN_CAP);
+    if overflow > 0 {
+        tail.drain(..overflow);
+    }
+    tail.extend(chunk.iter().copied());
+}
+
 fn authorize_admin(headers: &HeaderMap, state: &ProxyState) -> Result<(), StatusCode> {
     let Some(expected) = state.admin_token.as_deref() else {
         return Err(StatusCode::NOT_FOUND);
@@ -482,9 +502,7 @@ async fn handle_generic(
                 futures_util::pin_mut!(upstream_stream);
                 while let Some(item) = upstream_stream.next().await {
                     if let Ok(chunk) = &item {
-                        if head.len() < USAGE_SCAN_CAP { head.extend_from_slice(chunk); }
-                        tail.extend(chunk.iter().copied());
-                        if tail.len() > TAIL_SCAN_CAP { tail.drain(0..tail.len() - TAIL_SCAN_CAP); }
+                        record_usage_chunk(&mut head, &mut tail, chunk);
                     }
                     yield item;
                 }
@@ -597,7 +615,11 @@ async fn handle_chat(State(state): State<Arc<ProxyState>>, req: Request) -> Resp
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use axum::body::{to_bytes, Body};
+
+    use super::{record_usage_chunk, TAIL_SCAN_CAP, USAGE_SCAN_CAP};
 
     /// Pins the 413 discrimination used in handle_messages / handle_chat: when axum::body::to_bytes
     /// hits MAX_BODY_BYTES, the error's Display must contain "length limit". If a future bump to
@@ -611,5 +633,29 @@ mod tests {
             err.to_string().contains("length limit"),
             "length-limit error must contain 'length limit' for 413 discrimination: {err}"
         );
+    }
+
+    #[test]
+    fn usage_scan_buffers_stay_bounded_for_oversized_chunks() {
+        let chunk: Vec<u8> = (0..USAGE_SCAN_CAP + TAIL_SCAN_CAP)
+            .map(|index| (index % 251) as u8)
+            .collect();
+        let mut head = Vec::new();
+        let mut tail = VecDeque::new();
+
+        record_usage_chunk(&mut head, &mut tail, &chunk);
+
+        assert_eq!(head.len(), USAGE_SCAN_CAP);
+        assert_eq!(head, chunk[..USAGE_SCAN_CAP]);
+        assert_eq!(tail.len(), TAIL_SCAN_CAP);
+        assert_eq!(
+            tail.make_contiguous(),
+            &chunk[chunk.len() - TAIL_SCAN_CAP..]
+        );
+
+        record_usage_chunk(&mut head, &mut tail, b"final");
+        assert_eq!(head.len(), USAGE_SCAN_CAP);
+        assert_eq!(tail.len(), TAIL_SCAN_CAP);
+        assert!(tail.make_contiguous().ends_with(b"final"));
     }
 }
