@@ -13,6 +13,11 @@ async fn main() -> ExitCode {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8787);
+
+    // Bind address. Loopback by default: the proxy sits next to one agent, so exposing it on
+    // every interface would let any host on the LAN forward through it. Set TARE_BIND=0.0.0.0
+    // explicitly when a container or another box genuinely needs to reach it.
+    let bind_addr = std::env::var("TARE_BIND").unwrap_or_else(|_| "127.0.0.1".into());
     let recency_keep: usize = if let Ok(v) = std::env::var("TARE_RECENCY") {
         v.parse().unwrap_or(4)
     } else if let Some(profile) = tare_core::profile::load() {
@@ -88,14 +93,17 @@ async fn main() -> ExitCode {
         cnt_holdout_output_tokens: Default::default(),
     });
 
-    let listener = match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
+    let listener = match tokio::net::TcpListener::bind((bind_addr.as_str(), port)).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[tare-proxy] fatal: could not bind 0.0.0.0:{port}: {e}");
+            eprintln!("[tare-proxy] fatal: could not bind {bind_addr}:{port}: {e}");
             return ExitCode::FAILURE;
         }
     };
-    eprintln!("[tare-proxy] listening on :{port} -> {}", state.upstream);
+    eprintln!(
+        "[tare-proxy] listening on {bind_addr}:{port} -> {}",
+        state.upstream
+    );
     if let Err(e) = axum::serve(listener, app(state)).await {
         eprintln!("[tare-proxy] fatal: server error: {e}");
         return ExitCode::FAILURE;
