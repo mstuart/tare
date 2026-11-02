@@ -42,7 +42,7 @@
     "test": "node test/adapters.test.js && node test/install.test.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "2.6.4",
     "ultracite": "7.12.4"
   },
   "engines": {
