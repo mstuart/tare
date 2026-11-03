@@ -251,6 +251,16 @@ class CompressionMiddleware:
                 await self._send_payload_too_large(send)
                 return
 
+        # A transformed body can have a different length. Downstream consumers
+        # must read the ASGI body stream instead of trusting the original length.
+        scope = {
+            **scope,
+            "headers": [
+                (name, value)
+                for name, value in scope.get("headers", [])
+                if name.lower() != b"content-length"
+            ],
+        }
         body: bytes | None = None
         response_started = False
 
@@ -262,6 +272,8 @@ class CompressionMiddleware:
             body_buffer = bytearray()
             event = await receive()
             while True:
+                if event.get("type") != "http.request":
+                    return event
                 chunk = event.get("body", b"")
                 if len(body_buffer) + len(chunk) > self.max_body_bytes:
                     raise _RequestBodyTooLarge
@@ -310,7 +322,12 @@ class CompressionMiddleware:
             return body
         if not isinstance(payload, dict) or "messages" not in payload:
             return body
-        payload["messages"] = compress_messages(payload["messages"], self.task)
+        messages = payload["messages"]
+        if not isinstance(messages, list) or not all(
+            isinstance(message, dict) for message in messages
+        ):
+            return body
+        payload["messages"] = compress_messages(messages, self.task)
         return json.dumps(payload).encode()
 
 
@@ -490,7 +507,11 @@ def strands_model(base: Any) -> Any:
                 if isinstance(m, dict):
                     content_parts = m.get("content", [])
                     text = (
-                        content_parts[0].get("text", "")
+                        "\n".join(
+                            part.get("text", "")
+                            for part in content_parts
+                            if isinstance(part, dict)
+                        )
                         if content_parts and isinstance(content_parts[0], dict)
                         else str(content_parts)
                     )
